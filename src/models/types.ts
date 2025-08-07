@@ -11,6 +11,7 @@ export interface ProcessEmailRequest {
   email_context: EmailContext;
   action?: AgentAction;
   thread_id?: string;
+  additional_context?: string;
 }
 
 export interface ProcessEmailResponse {
@@ -37,7 +38,8 @@ export enum AgentAction {
   COMPOSE_REPLY = 'compose_reply',
   SUMMARIZE = 'summarize',
   ANALYZE_SENTIMENT = 'analyze_sentiment',
-  EXTRACT_TASKS = 'extract_tasks'
+  EXTRACT_TASKS = 'extract_tasks',
+  CHAT = 'chat'
 }
 
 export interface AgentStatus {

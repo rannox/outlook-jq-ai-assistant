@@ -97,16 +97,194 @@ export class UIComponents {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
+  static addUserMessage(text: string): void {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'chat-message user-message';
+    
+    messageDiv.innerHTML = `
+      <span class="message-icon">👤</span>
+      <span class="message-text">${text}</span>
+    `;
+    
+    chatMessages.appendChild(messageDiv);
+    
+    // Auto-scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  static showTypingIndicator(): void {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+
+    // Remove any existing typing indicator
+    this.hideTypingIndicator();
+
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'chat-message ai-message typing-indicator';
+    typingDiv.id = 'typing-indicator';
+    
+    typingDiv.innerHTML = `
+      <span class="message-icon">🤖</span>
+      <span class="message-text">
+        <div class="typing-dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </span>
+    `;
+    
+    chatMessages.appendChild(typingDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  static hideTypingIndicator(): void {
+    const typingIndicator = document.getElementById('typing-indicator');
+    if (typingIndicator) {
+      typingIndicator.remove();
+    }
+  }
+
+  static streamChatMessage(icon: string, initialText: string = ''): HTMLElement | null {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return null;
+
+    // Remove typing indicator if exists
+    this.hideTypingIndicator();
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'chat-message ai-message';
+    
+    messageDiv.innerHTML = `
+      <span class="message-icon">${icon}</span>
+      <span class="message-text">${initialText}</span>
+    `;
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    return messageDiv.querySelector('.message-text') as HTMLElement;
+  }
+
   static clearChatMessages(): void {
     const chatMessages = document.getElementById('chat-messages');
     if (chatMessages) {
       chatMessages.innerHTML = `
         <div class="chat-message ai-message">
           <span class="message-icon">🤖</span>
-          <span class="message-text">Ready to help! Click an action above to get started.</span>
+          <span class="message-text">Hi! I can help you with this email. Try asking me:<br/>
+          • "Extract the key tasks from this email"<br/>
+          • "Write a professional reply"<br/>
+          • "Summarize this email"<br/>
+          • "What's the sentiment here?"<br/>
+          Or just ask me anything about the email!</span>
         </div>
       `;
     }
+  }
+
+  static showChatApproval(options: any): Promise<any> {
+    return new Promise((resolve) => {
+      const chatMessages = document.getElementById('chat-messages');
+      if (!chatMessages) {
+        console.error('Chat messages container not found');
+        resolve({ type: 'reject' });
+        return;
+      }
+
+      // Create inline approval buttons as part of the chat
+      const approvalDiv = document.createElement('div');
+      approvalDiv.className = 'chat-message ai-message approval-message';
+      approvalDiv.id = 'inline-approval-message';
+      
+      // Create buttons based on options - optimized for email workflow
+      let buttonsHtml = `
+        <span class="message-icon">🤔</span>
+        <div class="message-text">
+          <div class="inline-approval-buttons">
+      `;
+
+      if (options.showOpenInOutlook) {
+        // Email workflow: Open in Outlook (primary action) + alternatives
+        buttonsHtml += `
+            <button class="approval-btn outlook-btn primary-btn" data-action="open_in_outlook">
+              <span class="btn-icon">📧</span>
+              <span class="btn-text">Open in Outlook</span>
+            </button>
+            <button class="approval-btn revise-btn" data-action="revise">
+              <span class="btn-icon">✏️</span>
+              <span class="btn-text">Revise</span>
+            </button>
+        `;
+      } else {
+        // General workflow: Accept + Edit for non-email proposals
+        buttonsHtml += `
+            <button class="approval-btn accept-btn primary-btn" data-action="accept">
+              <span class="btn-icon">✅</span>
+              <span class="btn-text">Accept</span>
+            </button>
+            <button class="approval-btn edit-btn" data-action="edit">
+              <span class="btn-icon">✏️</span>
+              <span class="btn-text">Improve</span>
+            </button>
+        `;
+      }
+
+      buttonsHtml += `
+            <button class="approval-btn reject-btn" data-action="reject">
+              <span class="btn-icon">❌</span>
+              <span class="btn-text">Reject</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      approvalDiv.innerHTML = buttonsHtml;
+      chatMessages.appendChild(approvalDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      const cleanup = () => {
+        const approvalMessage = document.getElementById('inline-approval-message');
+        if (approvalMessage) {
+          approvalMessage.remove();
+        }
+      };
+
+      // Add click handlers for all buttons
+      approvalDiv.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const button = target.closest('.approval-btn') as HTMLButtonElement;
+        
+        if (!button) return;
+        
+        const action = button.getAttribute('data-action');
+        cleanup();
+
+        switch (action) {
+          case 'accept':
+            resolve({ type: 'accept' });
+            break;
+          case 'edit':
+          case 'revise':
+            this.addChatMessage('✏️', 'What changes would you like me to make to this proposal?');
+            this.showInlineInput('Revision Request', 'Describe the changes you want...', (feedback: any) => {
+              resolve({ type: 'edit', feedback });
+            }, () => {
+              resolve({ type: 'reject' });
+            });
+            break;
+          case 'open_in_outlook':
+            resolve({ type: 'open_in_outlook' });
+            break;
+          case 'reject':
+            resolve({ type: 'reject' });
+            break;
+        }
+      });
+    });
   }
 
   static showInterruptDialog(interruptData: any): Promise<InterruptResponse> {

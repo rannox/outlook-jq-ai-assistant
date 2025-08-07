@@ -20,14 +20,13 @@ import {
 class EmailAssistant {
   private currentEmailContext: EmailContext | null = null;
   private currentThreadId: string | null = null;
-  private isProcessing: boolean = false;
-  private currentAction: AgentAction | null = null;
   private instanceId: string;
   private lastApprovedDraft: any = null; // Store the last approved draft for successful execution
+  private chatInitialized: boolean = false; // Prevent multiple chat interface initializations
 
   constructor() {
     this.instanceId = Math.random().toString(36).substr(2, 9);
-    console.log(`EmailAssistant instance created: ${this.instanceId}`);
+    console.log(`[DEBUG] EmailAssistant instance created: ${this.instanceId}`);
   }
 
   async initialize(): Promise<void> {
@@ -105,15 +104,8 @@ class EmailAssistant {
   }
 
   private initializeUI(): void {
-    // Action buttons
-    this.addEventListenerSafe('btn-compose-reply', 'click', 
-      () => this.handleAction(AgentAction.COMPOSE_REPLY));
-    this.addEventListenerSafe('btn-summarize', 'click', 
-      () => this.handleAction(AgentAction.SUMMARIZE));
-    this.addEventListenerSafe('btn-analyze-sentiment', 'click', 
-      () => this.handleAction(AgentAction.ANALYZE_SENTIMENT));
-    this.addEventListenerSafe('btn-extract-tasks', 'click', 
-      () => this.handleAction(AgentAction.EXTRACT_TASKS));
+    // Chat interface (primary and only interface)
+    this.initializeChatInterface();
 
     // Utility buttons
     this.addEventListenerSafe('btn-refresh', 'click', 
@@ -122,6 +114,473 @@ class EmailAssistant {
       () => this.testAgentConnection());
 
     console.log('UI event listeners initialized');
+  }
+
+  private initializeChatInterface(): void {
+    console.log('[DEBUG] initializeChatInterface called');
+    
+    // Prevent multiple initializations
+    if (this.chatInitialized) {
+      console.log('[DEBUG] Chat already initialized, skipping');
+      return;
+    }
+    
+    // Chat input and send button
+    const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
+    const chatSendBtn = document.getElementById('chat-send-btn') as HTMLButtonElement;
+
+    if (chatInput && chatSendBtn) {
+      // Send button click
+      this.addEventListenerSafe('chat-send-btn', 'click', () => this.sendChatMessage());
+
+      // Enter key handling for chat input
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          this.sendChatMessage();
+        }
+      });
+
+      // Auto-resize textarea
+      chatInput.addEventListener('input', () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+      });
+    }
+
+    // Suggestion buttons - remove any existing listeners first
+    const suggestionButtons = document.querySelectorAll('.suggestion-btn');
+    console.log(`[DEBUG] Found ${suggestionButtons.length} suggestion buttons`);
+    
+    // Clear any existing listeners by cloning and replacing elements
+    suggestionButtons.forEach((btn, index) => {
+      const newBtn = btn.cloneNode(true) as HTMLButtonElement;
+      btn.parentNode?.replaceChild(newBtn, btn);
+      
+      console.log(`[DEBUG] Adding listener to suggestion button ${index}: ${newBtn.getAttribute('data-suggestion')}`);
+      newBtn.addEventListener('click', () => {
+        console.log(`[DEBUG] Suggestion button clicked: ${newBtn.getAttribute('data-suggestion')}`);
+        const suggestion = newBtn.getAttribute('data-suggestion');
+        if (suggestion && chatInput) {
+          chatInput.value = suggestion;
+          this.sendChatMessage();
+        }
+      });
+    });
+
+    // Mark as initialized
+    this.chatInitialized = true;
+    console.log('Chat interface initialized');
+  }
+
+  private isEmailReplyRequest(message: string): boolean {
+    const lowerMessage = message.toLowerCase();
+    return (lowerMessage.includes('write') && (lowerMessage.includes('reply') || lowerMessage.includes('response'))) ||
+           (lowerMessage.includes('compose') && lowerMessage.includes('email')) ||
+           lowerMessage.includes('draft');
+  }
+
+  private async handleEmailReplyResponse(emailContent: string, originalMessage: string): Promise<void> {
+    try {
+      console.log('Creating Outlook reply with content:', emailContent);
+      
+      // Add a chat message to show what's happening
+      UIComponents.addChatMessage('📧', 'Opening email reply window in Outlook...');
+      
+      // Use the existing createReply function to open Outlook's reply window
+      await createReply(emailContent);
+      
+      // Add success message
+      UIComponents.addChatMessage('✅', 'Email reply window opened! You can edit and send the email from there.');
+      
+    } catch (error) {
+      console.error('Error creating email reply:', error);
+      UIComponents.addChatMessage('❌', 'Sorry, I couldn\'t open the email reply window. Here\'s the content instead:');
+      UIComponents.addChatMessage('📧', emailContent);
+    }
+  }
+
+  private formatProposalForChat(data: any): string {
+    if (data.description) {
+      return `💡 **Proposal**: ${data.description}`;
+    } else if (data.args && data.args.body) {
+      return `💡 **I'd like to propose this email reply**:\n\n${data.args.body}`;
+    } else {
+      return `💡 **I have a proposal for you to review**`;
+    }
+  }
+
+  private isEmailContent(args: any): boolean {
+    return args && (args.body || args.subject || args.to);
+  }
+
+  private async handleEmailProposalWorkflow(data: any): Promise<void> {
+    // Add email-specific approval message
+    UIComponents.addChatMessage('📧', 'Would you like me to open this in Outlook for you to review and send?');
+    
+    // Show chat approval buttons with email-specific options
+    const response = await UIComponents.showChatApproval({
+      showPreview: true,
+      showOpenInOutlook: true,
+      emailContent: data.args?.body || ''
+    });
+    
+    await this.handleApprovalResponse(response, data);
+  }
+
+  private async handleStandardProposalWorkflow(data: any): Promise<void> {
+    // Show standard chat approval buttons
+    const response = await UIComponents.showChatApproval({
+      showPreview: false,
+      showOpenInOutlook: false
+    });
+    
+    await this.handleApprovalResponse(response, data);
+  }
+
+  private shouldShowApprovalButtons(originalMessage: string, resultText: string): boolean {
+    const lowerMessage = originalMessage.toLowerCase();
+    const lowerResult = resultText.toLowerCase();
+    
+    // Show approval for proposal-like requests
+    if (lowerMessage.includes('proposal') || lowerMessage.includes('propose') || lowerMessage.includes('draft')) {
+      return true;
+    }
+    
+    // Show approval if the result looks like a proposal/draft
+    if (lowerResult.includes('subject:') && lowerResult.includes('dear ') && lowerResult.length > 100) {
+      return true;
+    }
+    
+    // Show approval for long, structured email content
+    if (lowerResult.includes('regards') && lowerResult.includes('dear ') && lowerResult.length > 150) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  private async handleProposalApprovalFlow(resultText: string, originalMessage: string): Promise<void> {
+    // Add the proposal to chat
+    UIComponents.addChatMessage('🤖', resultText);
+    
+    // Determine if this is email content
+    const isEmailContent = resultText.toLowerCase().includes('subject:') || 
+                          (resultText.toLowerCase().includes('dear ') && resultText.toLowerCase().includes('regards'));
+    
+    if (isEmailContent) {
+      // Email proposal workflow
+      UIComponents.addChatMessage('📧', 'Would you like me to open this email in Outlook for you to review and send?');
+      
+      const response = await UIComponents.showChatApproval({
+        showPreview: true,
+        showOpenInOutlook: true,
+        emailContent: resultText
+      });
+      
+      await this.handleDirectApprovalResponse(response, resultText, originalMessage);
+    } else {
+      // General proposal workflow
+      UIComponents.addChatMessage('💡', 'How would you like to proceed with this proposal?');
+      
+      const response = await UIComponents.showChatApproval({
+        showPreview: false,
+        showOpenInOutlook: false
+      });
+      
+      await this.handleDirectApprovalResponse(response, resultText, originalMessage);
+    }
+  }
+
+  private async handleDirectApprovalResponse(response: any, content: string, originalMessage: string): Promise<void> {
+    try {
+      if (response.type === 'open_in_outlook') {
+        // Open in Outlook (primary email action)
+        await this.handleEmailReplyResponse(content, originalMessage);
+      } else if (response.type === 'accept') {
+        // Copy proposal to clipboard and provide next steps
+        await this.handleAcceptProposal(content, originalMessage);
+      } else if (response.type === 'edit') {
+        UIComponents.addChatMessage('✏️', `I'll revise this based on your feedback: "${response.feedback}"`);
+        // Here we could re-send the request to the agent with the feedback
+        await this.handleRevisionRequest(originalMessage, response.feedback);
+      } else if (response.type === 'reject') {
+        UIComponents.addChatMessage('❌', 'Got it. I won\'t proceed with this proposal.');
+      }
+    } catch (error) {
+      console.error('Error handling approval response:', error);
+      UIComponents.addChatMessage('❌', 'Sorry, there was an error processing your response.');
+    }
+  }
+
+  private async handleAcceptProposal(content: string, originalMessage: string): Promise<void> {
+    try {
+      // Copy to clipboard
+      await navigator.clipboard.writeText(content);
+      
+      UIComponents.addChatMessage('✅', 'Perfect! I\'ve copied the proposal to your clipboard.');
+      UIComponents.addChatMessage('💡', 'You can now paste it into any document, email, or application where you need it.');
+      
+    } catch (clipboardError) {
+      console.log('Clipboard access failed, falling back to text selection');
+      
+      // Fallback: Create a temporary textarea for copying
+      try {
+        const tempTextArea = document.createElement('textarea');
+        tempTextArea.value = content;
+        tempTextArea.style.position = 'fixed';
+        tempTextArea.style.opacity = '0';
+        document.body.appendChild(tempTextArea);
+        tempTextArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempTextArea);
+        
+        UIComponents.addChatMessage('✅', 'Great! I\'ve copied the proposal to your clipboard.');
+        UIComponents.addChatMessage('💡', 'You can now paste it wherever you need it.');
+        
+      } catch (fallbackError) {
+        console.error('Both clipboard methods failed:', fallbackError);
+        UIComponents.addChatMessage('✅', 'Proposal accepted! Here\'s what you can do next:');
+        UIComponents.addChatMessage('📋', 'Copy the text above and paste it where you need it.');
+      }
+    }
+  }
+
+  private async handleRevisionRequest(originalMessage: string, feedback: string): Promise<void> {
+    // Add user feedback to chat
+    UIComponents.addUserMessage(`Please revise: ${feedback}`);
+    
+    // Show typing indicator and re-send request with revision instructions
+    UIComponents.showTypingIndicator();
+    
+    const revisedMessage = `${originalMessage}\n\nUser feedback for revision: ${feedback}`;
+    await this.handleChatConversation(revisedMessage);
+  }
+
+  private async handleApprovalResponse(response: any, originalData: any): Promise<void> {
+    if (!this.currentThreadId) {
+      console.error('No thread ID available for approval response');
+      return;
+    }
+
+    try {
+      if (response.type === 'open_in_outlook' && originalData.args?.body) {
+        // Open in Outlook and auto-accept
+        await this.handleEmailReplyResponse(originalData.args.body, 'email proposal');
+        await apiClient.resumeInterrupt(this.currentThreadId, { type: 'accept' });
+      } else {
+        // Standard flow
+        await apiClient.resumeInterrupt(this.currentThreadId, response);
+      }
+    } catch (error) {
+      console.error('Error handling approval response:', error);
+      UIComponents.addChatMessage('❌', 'Sorry, there was an error processing your response.');
+    }
+  }
+
+  private generateContextForMessage(message: string): string {
+    const lowerMessage = message.toLowerCase();
+    
+    // Detect if this is a request for email composition/reply
+    if (lowerMessage.includes('write') && (lowerMessage.includes('reply') || lowerMessage.includes('response'))) {
+      return `User requested: "${message}". 
+
+IMPORTANT: This is a request to compose/write an email reply. Please provide a COMPLETE, PROFESSIONAL EMAIL that includes:
+- Proper greeting (based on the original email's formality)
+- Clear and appropriate response to the original email's content
+- Professional closing
+- Proper email structure and formatting
+- Use the same language as the original email
+- Make it ready to send (complete email draft, not just conversational text)
+
+The response should be a properly formatted email that can be directly copied into an email client.`;
+    }
+    
+    // Detect if this is asking for email composition 
+    if (lowerMessage.includes('compose') || lowerMessage.includes('draft') || (lowerMessage.includes('write') && lowerMessage.includes('email'))) {
+      return `User requested: "${message}". 
+
+IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLETE, PROFESSIONAL EMAIL with proper structure, greeting, content, and closing. Make it ready to send.`;
+    }
+    
+    // Default context for other requests
+    return `User asked: "${message}". This is a conversational request about the email. Please provide a helpful response based on the email content.`;
+  }
+
+  private async sendChatMessage(): Promise<void> {
+    console.log('[DEBUG] sendChatMessage called');
+    const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
+    const chatSendBtn = document.getElementById('chat-send-btn') as HTMLButtonElement;
+
+    if (!chatInput || !chatSendBtn) return;
+
+    const message = chatInput.value.trim();
+    if (!message) return;
+
+    // Disable input while processing
+    chatInput.disabled = true;
+    chatSendBtn.disabled = true;
+
+    try {
+      // Add user message to chat
+      UIComponents.addUserMessage(message);
+      
+      // Clear input
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+
+      // Show typing indicator
+      UIComponents.showTypingIndicator();
+
+      // Send message directly to chat system - agent service will handle intent detection
+      await this.handleChatConversation(message);
+
+    } catch (error) {
+      console.error('Error sending chat message:', error);
+      UIComponents.hideTypingIndicator();
+      UIComponents.addChatMessage('❌', 'Sorry, I encountered an error. Please try again.');
+    } finally {
+      // Re-enable input
+      chatInput.disabled = false;
+      chatSendBtn.disabled = false;
+      chatInput.focus();
+    }
+  }
+
+
+
+  private async handleChatConversation(message: string): Promise<void> {
+    console.log(`[DEBUG] [${this.instanceId}] handleChatConversation called with: "${message}"`);
+    
+    // Create a chat request using the new CHAT action from agent service
+    const request: ProcessEmailRequest = {
+      email_context: this.currentEmailContext!,
+      action: AgentAction.CHAT, // Use the new chat action that agent service now supports
+      thread_id: this.currentThreadId || undefined,
+      additional_context: this.generateContextForMessage(message)
+    };
+
+    try {
+      const response = await this.sendChatRequestToAgent(request, message);
+    } catch (error) {
+      console.error('Error in chat conversation:', error);
+      UIComponents.hideTypingIndicator();
+      UIComponents.addChatMessage('❌', 'Sorry, I encountered an error. Please try again.');
+    }
+  }
+
+
+
+  private async sendChatRequestToAgent(request: ProcessEmailRequest, originalMessage: string): Promise<void> {
+    try {
+      console.log('Sending chat request to agent:', request);
+      const response = await apiClient.processEmail(request);
+      
+      this.currentThreadId = response.thread_id;
+
+      if (response.requires_human_input) {
+        // Connect to WebSocket for streaming response
+        await this.connectWebSocketForChat(response.thread_id);
+      } else {
+        // Direct response
+        UIComponents.hideTypingIndicator();
+        
+        // Convert response.result to proper string
+        let resultText: string;
+        console.log('Processing response.result:', response.result);
+        
+        if (typeof response.result === 'string') {
+          resultText = response.result;
+        } else if (typeof response.result === 'object' && response.result !== null) {
+          // Handle the new chat response format (agent service returns text, content, message)
+          if (response.result.text) {
+            resultText = response.result.text;
+          } else if (response.result.content) {
+            resultText = response.result.content;
+          } else if (response.result.message) {
+            resultText = response.result.message;
+          } else {
+            console.warn('Unexpected response.result format:', response.result);
+            resultText = JSON.stringify(response.result, null, 2);
+          }
+        } else {
+          resultText = response.result ? String(response.result) : 'Here\'s what I found!';
+        }
+        
+        console.log('Final resultText:', resultText);
+        
+        // Check if this should trigger approval workflow
+        if (this.shouldShowApprovalButtons(originalMessage, resultText)) {
+          await this.handleProposalApprovalFlow(resultText, originalMessage);
+        } else if (this.isEmailReplyRequest(originalMessage)) {
+          // Direct email reply (no approval needed)
+          await this.handleEmailReplyResponse(resultText, originalMessage);
+        } else {
+          // Regular chat response
+          UIComponents.addChatMessage('🤖', resultText);
+        }
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  private async connectWebSocketForChat(threadId: string): Promise<void> {
+    try {
+      await wsClient.connect(threadId);
+      
+      // Set up handlers for chat streaming
+      wsClient.onStatus((status) => {
+        console.log('Chat WebSocket status update:', status);
+      });
+
+      wsClient.onStream((data) => {
+        console.log('Chat WebSocket stream data:', data);
+        this.handleChatStreamData(data);
+      });
+
+    } catch (error) {
+      console.error('WebSocket connection error for chat:', error);
+      UIComponents.hideTypingIndicator();
+      UIComponents.addChatMessage('❌', 'Connection error. Please try again.');
+    }
+  }
+
+  private handleChatStreamData(data: any): void {
+    UIComponents.hideTypingIndicator();
+
+    if (data.type === 'stream' && data.content) {
+      // Stream the response content
+      this.streamChatResponse(data.content);
+    } else if (data.type === 'interrupt') {
+      // Handle human-in-the-loop for chat
+      this.handleChatInterrupt(data);
+    } else if (data.type === 'final') {
+      // Chat completed
+      console.log('Chat response completed');
+    }
+  }
+
+  private streamChatResponse(content: string): void {
+    // For now, add complete message - later we can implement true word-by-word streaming
+    UIComponents.addChatMessage('🤖', content);
+  }
+
+  private async handleChatInterrupt(data: any): Promise<void> {
+    // Handle interrupts in chat context with enhanced workflow
+    console.log('Handling chat interrupt:', data);
+    
+    // Add the AI's proposal to chat
+    const proposalText = this.formatProposalForChat(data);
+    UIComponents.addChatMessage('🤖', proposalText);
+    
+    // For email replies, show preview in chat and offer to open in Outlook
+    if (data.args && this.isEmailContent(data.args)) {
+      await this.handleEmailProposalWorkflow(data);
+    } else {
+      // Standard approval workflow
+      await this.handleStandardProposalWorkflow(data);
+    }
   }
 
   private addEventListenerSafe(elementId: string, event: string, handler: () => void): void {
@@ -142,91 +601,7 @@ class EmailAssistant {
     }
   }
 
-  private async handleAction(action: AgentAction): Promise<void> {
-    console.log(`[${this.instanceId}] handleAction called: ${action}`);
-    console.log(`[${this.instanceId}] Current state - isProcessing: ${this.isProcessing}, currentAction: ${this.currentAction}, threadId: ${this.currentThreadId}`);
-    console.log(`[${this.instanceId}] Email context available: ${!!this.currentEmailContext}`);
-    
-    if (this.isProcessing) {
-      console.log(`[${this.instanceId}] Request blocked - already processing`);
-      UIComponents.showError('Another action is already in progress. Please wait.');
-      return;
-    }
 
-    if (!this.currentEmailContext) {
-      UIComponents.showError('No email context available. Please refresh to load email data.');
-      return;
-    }
-
-    try {
-      this.isProcessing = true;
-      this.currentAction = action; // Store current action
-      UIComponents.enableButtons(false);
-      UIComponents.highlightButton(`btn-${action.replace('_', '-')}`, true);
-      // Clear previous chat and status
-      UIComponents.clearChatMessages();
-      UIComponents.clearStatusItems();
-      UIComponents.addStatusItem('🔄', `Starting ${action.replace('_', ' ')}`, true);
-      UIComponents.showStatus({ status: 'thinking', message: 'Sending request to agent...' });
-
-      // Prepare request
-      const request: ProcessEmailRequest = {
-        email_context: this.currentEmailContext,
-        action: action,
-        thread_id: this.currentThreadId || undefined
-      };
-
-      console.log('Sending request to agent:', request);
-
-      // Send to agent
-      UIComponents.addStatusItem('📤', 'Sending to agent', true);
-      console.log('About to send request to agent service...');
-      const response = await apiClient.processEmail(request);
-      console.log('Received response from agent service:', response);
-      console.log('=== INITIAL RESPONSE ROUTING ===');
-      console.log('requires_human_input:', response.requires_human_input);
-      console.log('interrupt_data present:', !!response.interrupt_data);
-      console.log('Will take HITL path:', !!response.requires_human_input);
-      
-      UIComponents.addStatusItem('📥', 'Response received', true);
-      
-      this.currentThreadId = response.thread_id;
-      console.log('Thread ID set to:', this.currentThreadId);
-
-      if (response.requires_human_input) {
-        // Connect to WebSocket for real-time updates
-        UIComponents.addStatusItem('🔗', 'Connecting...', true);
-        await this.connectWebSocket(response.thread_id);
-        
-        // Handle human-in-the-loop
-        UIComponents.addStatusItem('🤔', 'Waiting for approval', true);
-        if (response.interrupt_data) {
-          await this.handleHumanInTheLoop(response.interrupt_data);
-        } else {
-          console.error('HTTP response has requires_human_input=true but null interrupt_data');
-          UIComponents.showError('Invalid approval request from server. Please try again.');
-        }
-      } else {
-        // Process completed immediately
-        UIComponents.addStatusItem('✅', 'Processing complete', true);
-        this.handleCompletedTask(response.result);
-      }
-
-    } catch (error) {
-      console.error('Error processing action:', error);
-      UIComponents.addStatusItem('❌', 'Error occurred', false, true);
-      UIComponents.showError(`Failed to process ${action}: ${error instanceof Error ? error.message : String(error)}`);
-      UIComponents.showStatus({ status: 'error', message: 'Error occurred' });
-    } finally {
-      this.isProcessing = false;
-      this.currentAction = null; // Clear current action
-      UIComponents.enableButtons(true);
-      UIComponents.highlightButton(`btn-${action.replace('_', '-')}`, false);
-      console.log(`[${this.instanceId}] Action ${action} completed - state reset for next action`);
-      console.log(`[${this.instanceId}] Final state - isProcessing: ${this.isProcessing}, emailContext: ${!!this.currentEmailContext}`);
-      // No more loading overlay or HITL section to hide
-    }
-  }
 
   private async connectWebSocket(threadId: string): Promise<void> {
     try {
@@ -240,45 +615,32 @@ class EmailAssistant {
           hasData: !!status.data,
           timestamp: new Date().toISOString()
         });
-        console.log('Current processing state:', {
-          isProcessing: this.isProcessing,
-          currentAction: this.currentAction,
-          currentThreadId: this.currentThreadId
-        });
-        console.log('Full WebSocket status:', status);
-        
+        console.log('WebSocket status update:', status);
         UIComponents.showStatus(status);
         
-        if (status.status === 'waiting_for_human') {
-          console.log('WebSocket waiting_for_human check:', {
-            hasData: !!status.data,
-            isProcessing: this.isProcessing,
-            currentThreadId: this.currentThreadId,
-            statusThreadId: status.thread_id,
-            threadsMatch: status.thread_id === this.currentThreadId
-          });
-          
-          if (status.data && this.isProcessing && this.currentThreadId && status.thread_id === this.currentThreadId) {
-            console.log('WebSocket triggering human-in-the-loop for current action');
-            this.handleHumanInTheLoop(status.data);
+        if (status.status === 'waiting_for_human' && status.data && this.currentThreadId && status.thread_id === this.currentThreadId) {
+          console.log('WebSocket triggering human-in-the-loop for current thread');
+          this.handleHumanInTheLoop(status.data);
+        } else if (status.status === 'completed' && status.data && this.currentThreadId && status.thread_id === this.currentThreadId) {
+          console.log('WebSocket handling completion for current thread');
+          // For chat system, just add result to chat
+          let resultText: string;
+          if (typeof status.data === 'string') {
+            resultText = status.data;
+          } else if (typeof status.data === 'object' && status.data !== null) {
+            if (status.data.text) {
+              resultText = status.data.text;
+            } else if (status.data.content) {
+              resultText = status.data.content;
+            } else if (status.data.message) {
+              resultText = status.data.message;
+            } else {
+              resultText = JSON.stringify(status.data, null, 2);
+            }
           } else {
-            console.log('Ignoring WebSocket human-in-the-loop:', {
-              reason: !status.data ? 'no data' :
-                      !this.isProcessing ? 'not processing' : 
-                      !this.currentThreadId ? 'no current thread' :
-                      status.thread_id !== this.currentThreadId ? 'different thread' : 'unknown',
-              statusThreadId: status.thread_id,
-              currentThreadId: this.currentThreadId
-            });
+            resultText = 'Task completed successfully!';
           }
-        } else if (status.status === 'completed' && status.data) {
-          // Only handle completion for the current thread
-          if (this.currentThreadId && status.thread_id === this.currentThreadId) {
-            console.log('WebSocket handling completion for current thread');
-            this.handleCompletedTask(status.data);
-          } else {
-            console.log('Ignoring WebSocket completion for different/no thread');
-          }
+          UIComponents.addChatMessage('🤖', resultText);
         } else if (status.status === 'error') {
           UIComponents.addStatusItem('❌', status.message || 'Processing error', false, true);
           UIComponents.addChatMessage('❌', `Error: ${status.message || 'An error occurred during processing'}`);
@@ -331,11 +693,8 @@ class EmailAssistant {
         // Disconnect WebSocket and clean up
         wsClient.disconnect();
         
-        // Reset processing state immediately for next action
-        this.isProcessing = false;
-        this.currentAction = null;
+        // Reset thread state for next action
         this.currentThreadId = null;
-        UIComponents.enableButtons(true);
         
         console.log('State reset after rejection - ready for next action');
         return;
@@ -374,8 +733,24 @@ class EmailAssistant {
             UIComponents.showError('Invalid approval request from server. Please try again.');
           }
         } else {
-          // Task completed
-          this.handleCompletedTask(response.result);
+          // Task completed - add result to chat
+          let resultText: string;
+          if (typeof response.result === 'string') {
+            resultText = response.result;
+          } else if (typeof response.result === 'object' && response.result !== null) {
+            if (response.result.text) {
+              resultText = response.result.text;
+            } else if (response.result.content) {
+              resultText = response.result.content;
+            } else if (response.result.message) {
+              resultText = response.result.message;
+            } else {
+              resultText = JSON.stringify(response.result, null, 2);
+            }
+          } else {
+            resultText = 'Task completed successfully!';
+          }
+          UIComponents.addChatMessage('🤖', resultText);
         }
       }
 
@@ -384,54 +759,13 @@ class EmailAssistant {
       UIComponents.showError('Failed to process your response');
     } finally {
       UIComponents.showLoading(false);
-      // Only reset state if we didn't already handle it (e.g., in reject case)
-      if (this.isProcessing) {
-        this.isProcessing = false;
-        this.currentAction = null;
-        UIComponents.enableButtons(true);
-        console.log(`[${this.instanceId}] State reset in finally block`);
-      }
+      console.log(`[${this.instanceId}] Human-in-the-loop handling completed`);
     }
   }
 
-  private async handleCompletedTask(result: any): Promise<void> {
-    console.log('=== TASK COMPLETED ===');
-    console.log('Result:', result);
-    console.log('Current action:', this.currentAction);
-    console.log('Should auto-apply result:', this.shouldAutoApplyResult());
-    
-    UIComponents.showStatus({ status: 'completed', message: 'Task completed successfully' });
-    UIComponents.hideStreamingContent();
-    UIComponents.hideInterruptSection(); // Hide the inline HITL section
-    
-    // Update result area
-    UIComponents.updateResult(result);
-    
-    // Only auto-apply result for compose actions, not for analysis actions
-    if (this.shouldAutoApplyResult()) {
-      console.log('Auto-applying result...');
-      await this.applyResult(result);
-    } else {
-      console.log('Not auto-applying result - action:', this.currentAction);
-    }
-    
-    // Disconnect WebSocket
-    wsClient.disconnect();
-    
-    // Refresh email context for future actions
-    console.log('Refreshing email context after task completion...');
-    this.currentEmailContext = await getCurrentEmailContext();
-    console.log('Email context refreshed:', !!this.currentEmailContext);
-    
-    UIComponents.showSuccess('Task completed successfully!');
-  }
 
-  private shouldAutoApplyResult(): boolean {
-    // Only auto-apply for actions that should create/modify emails
-    // Don't auto-apply for analysis actions that should just display results
-    const autoApplyActions = [AgentAction.COMPOSE_REPLY];
-    return this.currentAction ? autoApplyActions.includes(this.currentAction) : false;
-  }
+
+
 
   private async handleSuccessfulDraftExecution(): Promise<void> {
     console.log('=== HANDLING SUCCESSFUL DRAFT EXECUTION ===');

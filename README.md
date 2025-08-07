@@ -1,17 +1,26 @@
 # JQuad AI Assistant - Outlook Add-in
 
-A simplified Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that integrates with an AI agent service to provide intelligent email assistance with human-in-the-loop capabilities.
+A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that provides an intelligent, conversational AI assistant for email management. Built with ambient agent patterns and human-in-the-loop capabilities.
 
-## Features
+## ✨ Features
 
-- **Smart Email Processing**: AI-powered email analysis and response generation
-- **Human-in-the-Loop**: Review and approve AI suggestions before applying
-- **Real-time Updates**: WebSocket integration for live processing feedback
-- **Multiple Actions**: 
-  - Compose Reply
-  - Summarize Email
-  - Analyze Sentiment
-  - Extract Tasks
+### 🗣️ **Conversational Interface**
+- **Natural Chat Experience**: Type requests in plain English like "Write a proposal to decline this meeting"
+- **Streaming Responses**: Real-time, word-by-word AI responses
+- **Smart Suggestions**: Quick action buttons for common tasks
+- **Context Awareness**: AI understands email content and conversation history
+
+### 🔧 **Smart Email Actions**
+- **Email Composition**: Generate professional replies, declinations, proposals
+- **Content Analysis**: Summarize emails, extract tasks, analyze sentiment  
+- **Outlook Integration**: Seamlessly opens AI-generated emails in Outlook for editing
+- **Multiple Formats**: Handles various email types and languages
+
+### 🤝 **Human-in-the-Loop Workflow**
+- **Smart Approval System**: Context-aware buttons that appear when AI needs feedback
+- **Inline Chat Approvals**: Beautiful, chat-integrated approval buttons
+- **Revision Support**: Request changes and get improved proposals
+- **Clipboard Integration**: Easy copying of accepted proposals
 
 ## Architecture
 
@@ -84,23 +93,80 @@ The add-in connects to the agent service at `http://localhost:8000` by default. 
 2. Update the WebSocket URL in `src/taskpane/websocket-client.ts`
 3. Add any new domains to `manifest.xml` `<AppDomains>` section
 
-## Usage
+## 🚀 Usage Examples
 
-1. **Select an Email**: Open any email in Outlook
-2. **Open Add-in**: Click the "AI Assistant" button in the ribbon
-3. **Choose Action**: Select from the available quick actions
-4. **Review & Approve**: When the AI makes suggestions, review and approve/edit/reject
-5. **Apply Results**: Approved content is automatically applied to your email
+### **Basic Chat Interaction**
+1. **Open the Add-in**: Click "AI Assistant" in Outlook ribbon
+2. **Start Chatting**: Type natural requests like:
+   - *"Summarize this email"*
+   - *"Extract the key tasks"*
+   - *"What's the sentiment here?"*
+3. **Get Instant Responses**: AI responds in real-time with relevant information
 
-## Human-in-the-Loop Workflow
+### **Email Composition Workflow**
+```
+👤 You: "Write a professional reply declining this meeting invitation"
 
-1. AI analyzes email and proposes an action
-2. User sees a dialog with the proposed action details
-3. User can:
-   - **Accept**: Apply the action as-is
-   - **Edit**: Modify the action parameters
-   - **Respond**: Provide feedback for the AI to incorporate
-   - **Reject**: Cancel the action
+🤖 AI: [Shows generated email with proper structure]
+     "Would you like me to open this email in Outlook for you to review and send?"
+
+🎯 Actions: [📧 Open in Outlook] [✏️ Revise] [❌ Reject]
+```
+
+**If you click "📧 Open in Outlook":**
+- Outlook reply window opens with the AI-generated email
+- You can edit, review, and send directly from Outlook
+- No copy-paste needed!
+
+**If you click "✏️ Revise":**
+```
+👤 You: "Make it more formal and add an apology"
+
+🤖 AI: [Shows revised version with your requested changes]
+     "Would you like me to open this revised email in Outlook?"
+```
+
+### **General Proposal Workflow**
+```
+👤 You: "Create a proposal for organizing a team building event"
+
+🤖 AI: [Shows detailed proposal]
+     "How would you like to proceed with this proposal?"
+
+🎯 Actions: [✅ Accept] [✏️ Improve] [❌ Reject]
+```
+
+**If you click "✅ Accept":**
+- Proposal is automatically copied to your clipboard
+- Ready to paste into any document or email
+- Perfect for quick content creation!
+
+### **Quick Action Buttons**
+Use the suggestion buttons for instant actions:
+- **✅ Extract Tasks** → Get bullet-pointed action items
+- **📝 Write Reply** → Generate professional email responses  
+- **📄 Summarize** → Get concise email summaries
+- **😊 Sentiment** → Analyze email tone and sentiment
+
+## 🎯 Human-in-the-Loop Workflow
+
+Our approval system uses **inline chat buttons** that adapt to context:
+
+### **For Email Proposals:**
+- **📧 Open in Outlook** (Primary) - Opens email in Outlook for editing
+- **✏️ Revise** - Request specific changes to the email
+- **❌ Reject** - Decline the proposal
+
+### **For General Proposals:**
+- **✅ Accept** (Primary) - Copy proposal to clipboard for use anywhere
+- **✏️ Improve** - Request enhancements or modifications  
+- **❌ Reject** - Decline the proposal
+
+### **Smart Features:**
+- **Context-Aware**: Buttons change based on content type
+- **Visual Hierarchy**: Primary actions are highlighted
+- **Conversational**: All interactions feel natural in chat
+- **Error Handling**: Graceful fallbacks for all operations
 
 ## Troubleshooting
 
@@ -119,12 +185,30 @@ The add-in connects to the agent service at `http://localhost:8000` by default. 
 - Ensure TypeScript version compatibility
 - Check for port conflicts on port 3000
 
-## Development Tips
+## 💡 Advanced Features
+
+### **Ambient Agent Pattern**
+This add-in implements the ambient agent pattern inspired by [LangChain Academy](https://academy.langchain.com/courses/ambient-agents):
+- **Always-on Context**: AI maintains awareness of email content throughout the conversation
+- **Memory Persistence**: Conversation history is maintained across interactions
+- **Intent Detection**: AI automatically understands what you want to accomplish
+- **Streaming Responses**: Real-time feedback for improved user experience
+
+### **LangGraph Integration**
+Compatible with [LangGraph Agent Inbox](https://github.com/langchain-ai/agent-inbox) standards:
+- **Interrupt Schema**: Follows standard `HumanInterrupt` and `HumanResponse` patterns
+- **Action Types**: Supports `accept`, `edit`, `ignore` actions with custom email extensions
+- **Config-driven**: Approval buttons adapt based on agent configuration
+- **WebSocket Communication**: Real-time updates via WebSocket connections
+
+## 🛠️ Development Tips
 
 1. **Hot Reload**: The dev server supports hot reload for faster development
 2. **Debugging**: Use browser dev tools when running in Outlook on the web
 3. **Manifest Changes**: Restart Outlook after modifying `manifest.xml`
 4. **HTTPS Required**: Outlook requires HTTPS for add-ins (dev server provides this)
+5. **Chat Interface**: All user interactions now flow through the conversational interface
+6. **Approval Testing**: Use proposal-type requests to test the approval workflow
 
 ## License
 

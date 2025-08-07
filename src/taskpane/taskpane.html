@@ -46,28 +46,44 @@
             </div>
         </div>
 
-        <!-- AI Chat and Status Container -->
+        <!-- AI Conversational Interface - Now Primary -->
         <div class="ai-container">
-            <!-- Status Area -->
-            <div id="status-area" class="status-section">
-                <h4>📊 Status</h4>
-                <div id="status-content" class="status-content">
-                    <div class="status-item">
-                        <span class="status-icon">⚡</span>
-                        <span class="status-text">Ready</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- AI Chat Stream Section -->
+            <!-- AI Chat Stream Section - Enhanced -->
             <div id="ai-chat-section" class="chat-section">
-                <h3>🤖 AI Assistant</h3>
+                <h3>💬 Chat with AI Assistant</h3>
                 <div id="chat-messages" class="chat-messages">
                     <div class="chat-message ai-message">
                         <span class="message-icon">🤖</span>
-                        <span class="message-text">Ready to help! Click an action above to get started.</span>
+                        <span class="message-text">Hi! I can help you with this email. Try asking me:<br/>
+                        • "Extract the key tasks from this email"<br/>
+                        • "Write a professional reply"<br/>
+                        • "Summarize this email"<br/>
+                        • "What's the sentiment here?"<br/>
+                        Or just ask me anything about the email!</span>
                     </div>
                 </div>
+                
+                <!-- Chat Input Area -->
+                <div class="chat-input-container">
+                    <div class="chat-input-wrapper">
+                        <textarea 
+                            id="chat-input" 
+                            class="chat-input" 
+                            placeholder="Ask me anything about this email... (Press Enter to send, Shift+Enter for new line)"
+                            rows="2"
+                        ></textarea>
+                        <button id="chat-send-btn" class="chat-send-btn" title="Send message">
+                            <span class="send-icon">📤</span>
+                        </button>
+                    </div>
+                    <div class="chat-suggestions">
+                        <button class="suggestion-btn" data-suggestion="Extract the key tasks from this email">✅ Extract Tasks</button>
+                        <button class="suggestion-btn" data-suggestion="Write a professional email reply to this email">📝 Write Reply</button>
+                        <button class="suggestion-btn" data-suggestion="Summarize this email">📄 Summarize</button>
+                        <button class="suggestion-btn" data-suggestion="Analyze the sentiment of this email">😊 Sentiment</button>
+                    </div>
+                </div>
+                
                 <div id="chat-approval-area" class="chat-approval" style="display: none;">
                     <div class="approval-buttons">
                         <button id="chat-btn-accept" class="btn btn-success">✅ Accept</button>
@@ -77,26 +93,19 @@
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Actions -->
-        <div class="section">
-            <h3>⚡ Quick Actions</h3>
-            <div class="actions-grid">
-                <button id="btn-compose-reply" class="btn btn-primary action-btn" title="Generate a professional reply to this email">
-                    📝 Compose Reply
-                </button>
-                <button id="btn-summarize" class="btn btn-secondary action-btn" title="Create a concise summary of this email">
-                    📄 Summarize
-                </button>
-                <button id="btn-analyze-sentiment" class="btn btn-secondary action-btn" title="Analyze the tone and sentiment of this email">
-                    😊 Analyze Sentiment
-                </button>
-                <button id="btn-extract-tasks" class="btn btn-secondary action-btn" title="Extract actionable tasks from this email">
-                    ✅ Extract Tasks
-                </button>
+            <!-- Status Area - Minimized -->
+            <div id="status-area" class="status-section minimized">
+                <div id="status-content" class="status-content">
+                    <div class="status-item">
+                        <span class="status-icon">⚡</span>
+                        <span class="status-text">Ready</span>
+                    </div>
+                </div>
             </div>
         </div>
+
+
 
         <!-- Streaming Content -->
         <div id="stream-section" class="section" style="display: none;">
@@ -104,18 +113,23 @@
             <div id="stream-content" class="stream-area"></div>
         </div>
 
-        <!-- Result Area -->
-        <div class="section">
-            <h3>📋 Result</h3>
-            <textarea 
-                id="result-area" 
-                class="result-textarea" 
-                placeholder="Results will appear here..."
-                readonly
-            ></textarea>
-            <div class="result-actions">
-                <button id="btn-copy-result" class="btn btn-small" onclick="copyResult()">📋 Copy</button>
-                <button id="btn-clear-result" class="btn btn-small" onclick="clearResult()">🗑️ Clear</button>
+        <!-- Result Area - Now Secondary to Chat -->
+        <div class="section collapsible">
+            <h3 class="collapsible-header" onclick="toggleSection('result-area-content')">
+                <span class="toggle-icon">▼</span>
+                📋 Result Area (Legacy - Results appear in chat above)
+            </h3>
+            <div id="result-area-content" class="collapsible-content" style="display: none;">
+                <textarea 
+                    id="result-area" 
+                    class="result-textarea" 
+                    placeholder="Legacy results area - new results appear in chat above"
+                    readonly
+                ></textarea>
+                <div class="result-actions">
+                    <button id="btn-copy-result" class="btn btn-small" onclick="copyResult()">📋 Copy</button>
+                    <button id="btn-clear-result" class="btn btn-small" onclick="clearResult()">🗑️ Clear</button>
+                </div>
             </div>
         </div>
 
@@ -169,6 +183,18 @@
             if (resultArea) {
                 resultArea.value = '';
                 resultArea.style.height = 'auto';
+            }
+        }
+
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            const header = event.target.closest('.collapsible-header');
+            const icon = header?.querySelector('.toggle-icon');
+            
+            if (section && icon) {
+                const isVisible = section.style.display !== 'none';
+                section.style.display = isVisible ? 'none' : 'block';
+                icon.textContent = isVisible ? '▶' : '▼';
             }
         }
 
