@@ -540,32 +540,7 @@ export class UIComponents {
     inputField?.addEventListener('keydown', onKeyDown);
   }
 
-  static updateResult(result: any): void {
-    const resultArea = document.getElementById('result-area') as HTMLTextAreaElement;
-    if (resultArea && result) {
-      let displayText = '';
-      
-      if (typeof result === 'string') {
-        displayText = result;
-      } else if (result.messages && Array.isArray(result.messages)) {
-        // Extract content from messages
-        const lastMessage = result.messages[result.messages.length - 1];
-        if (lastMessage && lastMessage.content) {
-          displayText = lastMessage.content;
-        } else {
-          displayText = JSON.stringify(result, null, 2);
-        }
-      } else {
-        displayText = JSON.stringify(result, null, 2);
-      }
-      
-      resultArea.value = displayText;
-      
-      // Auto-resize textarea
-      resultArea.style.height = 'auto';
-      resultArea.style.height = Math.min(resultArea.scrollHeight, 300) + 'px';
-    }
-  }
+
 
   static showError(message: string): void {
     const errorDiv = document.getElementById('error-message');

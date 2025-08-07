@@ -113,25 +113,7 @@
             <div id="stream-content" class="stream-area"></div>
         </div>
 
-        <!-- Result Area - Now Secondary to Chat -->
-        <div class="section collapsible">
-            <h3 class="collapsible-header" onclick="toggleSection('result-area-content')">
-                <span class="toggle-icon">▼</span>
-                📋 Result Area (Legacy - Results appear in chat above)
-            </h3>
-            <div id="result-area-content" class="collapsible-content" style="display: none;">
-                <textarea 
-                    id="result-area" 
-                    class="result-textarea" 
-                    placeholder="Legacy results area - new results appear in chat above"
-                    readonly
-                ></textarea>
-                <div class="result-actions">
-                    <button id="btn-copy-result" class="btn btn-small" onclick="copyResult()">📋 Copy</button>
-                    <button id="btn-clear-result" class="btn btn-small" onclick="clearResult()">🗑️ Clear</button>
-                </div>
-            </div>
-        </div>
+
 
         <!-- Success Message -->
         <div id="success-message" class="success-message" style="display: none;"></div>
@@ -165,27 +147,6 @@
 
     <!-- Helper Scripts -->
     <script>
-        function copyResult() {
-            const resultArea = document.getElementById('result-area');
-            if (resultArea && resultArea.value) {
-                navigator.clipboard.writeText(resultArea.value).then(() => {
-                    showTemporaryMessage('Copied to clipboard!', 'success');
-                }).catch(() => {
-                    resultArea.select();
-                    document.execCommand('copy');
-                    showTemporaryMessage('Copied to clipboard!', 'success');
-                });
-            }
-        }
-
-        function clearResult() {
-            const resultArea = document.getElementById('result-area');
-            if (resultArea) {
-                resultArea.value = '';
-                resultArea.style.height = 'auto';
-            }
-        }
-
         function toggleSection(sectionId) {
             const section = document.getElementById(sectionId);
             const header = event.target.closest('.collapsible-header');
@@ -226,7 +187,6 @@
                 }, 300);
             }, 3000);
         }
-
         // Add CSS animations
         const style = document.createElement('style');
         style.textContent = `

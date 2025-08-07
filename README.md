@@ -19,8 +19,8 @@ A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that prov
 ### 🤝 **Human-in-the-Loop Workflow**
 - **Smart Approval System**: Context-aware buttons that appear when AI needs feedback
 - **Inline Chat Approvals**: Beautiful, chat-integrated approval buttons
-- **Revision Support**: Request changes and get improved proposals
-- **Clipboard Integration**: Easy copying of accepted proposals
+- **Revision Support**: Request changes and get improved email proposals
+- **Outlook Integration**: Seamless handoff to Outlook for final editing
 
 ## Architecture
 
@@ -126,20 +126,7 @@ The add-in connects to the agent service at `http://localhost:8000` by default. 
      "Would you like me to open this revised email in Outlook?"
 ```
 
-### **General Proposal Workflow**
-```
-👤 You: "Create a proposal for organizing a team building event"
 
-🤖 AI: [Shows detailed proposal]
-     "How would you like to proceed with this proposal?"
-
-🎯 Actions: [✅ Accept] [✏️ Improve] [❌ Reject]
-```
-
-**If you click "✅ Accept":**
-- Proposal is automatically copied to your clipboard
-- Ready to paste into any document or email
-- Perfect for quick content creation!
 
 ### **Quick Action Buttons**
 Use the suggestion buttons for instant actions:
@@ -157,10 +144,7 @@ Our approval system uses **inline chat buttons** that adapt to context:
 - **✏️ Revise** - Request specific changes to the email
 - **❌ Reject** - Decline the proposal
 
-### **For General Proposals:**
-- **✅ Accept** (Primary) - Copy proposal to clipboard for use anywhere
-- **✏️ Improve** - Request enhancements or modifications  
-- **❌ Reject** - Decline the proposal
+
 
 ### **Smart Features:**
 - **Context-Aware**: Buttons change based on content type
@@ -197,7 +181,7 @@ This add-in implements the ambient agent pattern inspired by [LangChain Academy]
 ### **LangGraph Integration**
 Compatible with [LangGraph Agent Inbox](https://github.com/langchain-ai/agent-inbox) standards:
 - **Interrupt Schema**: Follows standard `HumanInterrupt` and `HumanResponse` patterns
-- **Action Types**: Supports `accept`, `edit`, `ignore` actions with custom email extensions
+- **Action Types**: Supports `accept`, `edit`, `ignore` actions optimized for email workflows
 - **Config-driven**: Approval buttons adapt based on agent configuration
 - **WebSocket Communication**: Real-time updates via WebSocket connections
 
