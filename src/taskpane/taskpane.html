@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JQuad AI Assistant</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js" type="text/javascript"></script>
+    <link rel="stylesheet" href="taskpane.css" />
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-content">
+                <h2>🤖 JQuad AI Assistant</h2>
+                <div class="header-status">
+                    <span id="connection-status" title="Service connection status">🔴</span>
+                    <div id="status" class="status status-ready">
+                        <span id="status-text">Ready</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Context -->
+        <div id="email-context" class="section" style="display: none;">
+            <h3>📧 Current Email</h3>
+            <div class="email-info">
+                <div class="email-field">
+                    <strong>Subject:</strong> 
+                    <span id="email-subject" class="email-value">No subject</span>
+                </div>
+                <div class="email-field">
+                    <strong>From:</strong> 
+                    <span id="email-from" class="email-value">Unknown sender</span>
+                </div>
+                <div class="email-field">
+                    <strong>To:</strong> 
+                    <span id="email-to" class="email-value">Unknown recipient</span>
+                </div>
+            </div>
+            <div class="email-actions">
+                <button id="btn-refresh" class="btn btn-small">🔄 Refresh</button>
+                <button id="btn-test-connection" class="btn btn-small">🔗 Test Connection</button>
+            </div>
+        </div>
+
+        <!-- AI Chat and Status Container -->
+        <div class="ai-container">
+            <!-- Status Area -->
+            <div id="status-area" class="status-section">
+                <h4>📊 Status</h4>
+                <div id="status-content" class="status-content">
+                    <div class="status-item">
+                        <span class="status-icon">⚡</span>
+                        <span class="status-text">Ready</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Chat Stream Section -->
+            <div id="ai-chat-section" class="chat-section">
+                <h3>🤖 AI Assistant</h3>
+                <div id="chat-messages" class="chat-messages">
+                    <div class="chat-message ai-message">
+                        <span class="message-icon">🤖</span>
+                        <span class="message-text">Ready to help! Click an action above to get started.</span>
+                    </div>
+                </div>
+                <div id="chat-approval-area" class="chat-approval" style="display: none;">
+                    <div class="approval-buttons">
+                        <button id="chat-btn-accept" class="btn btn-success">✅ Accept</button>
+                        <button id="chat-btn-edit" class="btn btn-warning">✏️ Edit</button>
+                        <button id="chat-btn-respond" class="btn btn-info">💬 Respond</button>
+                        <button id="chat-btn-reject" class="btn btn-danger">❌ Reject</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="section">
+            <h3>⚡ Quick Actions</h3>
+            <div class="actions-grid">
+                <button id="btn-compose-reply" class="btn btn-primary action-btn" title="Generate a professional reply to this email">
+                    📝 Compose Reply
+                </button>
+                <button id="btn-summarize" class="btn btn-secondary action-btn" title="Create a concise summary of this email">
+                    📄 Summarize
+                </button>
+                <button id="btn-analyze-sentiment" class="btn btn-secondary action-btn" title="Analyze the tone and sentiment of this email">
+                    😊 Analyze Sentiment
+                </button>
+                <button id="btn-extract-tasks" class="btn btn-secondary action-btn" title="Extract actionable tasks from this email">
+                    ✅ Extract Tasks
+                </button>
+            </div>
+        </div>
+
+        <!-- Streaming Content -->
+        <div id="stream-section" class="section" style="display: none;">
+            <h3>🔄 Processing...</h3>
+            <div id="stream-content" class="stream-area"></div>
+        </div>
+
+        <!-- Result Area -->
+        <div class="section">
+            <h3>📋 Result</h3>
+            <textarea 
+                id="result-area" 
+                class="result-textarea" 
+                placeholder="Results will appear here..."
+                readonly
+            ></textarea>
+            <div class="result-actions">
+                <button id="btn-copy-result" class="btn btn-small" onclick="copyResult()">📋 Copy</button>
+                <button id="btn-clear-result" class="btn btn-small" onclick="clearResult()">🗑️ Clear</button>
+            </div>
+        </div>
+
+        <!-- Success Message -->
+        <div id="success-message" class="success-message" style="display: none;"></div>
+
+        <!-- Error Display -->
+        <div id="error-message" class="error-message" style="display: none;"></div>
+    </div>
+
+    <!-- Removed loading overlay - using streaming chat instead -->
+
+    <!-- Interrupt Dialog -->
+    <div id="interrupt-dialog" class="dialog-overlay" style="display: none;">
+        <div class="dialog">
+            <div class="dialog-header">
+                <h3>🤔 AI Needs Your Input</h3>
+            </div>
+            
+            <div class="dialog-body">
+                <p id="interrupt-description">The AI assistant needs your approval for the next action.</p>
+                <div id="action-details" class="action-details" style="display: none;"></div>
+            </div>
+            
+            <div class="dialog-buttons">
+                <button id="btn-accept" class="btn btn-success">✅ Accept</button>
+                <button id="btn-edit" class="btn btn-warning">✏️ Edit</button>
+                <button id="btn-respond" class="btn btn-info">💬 Respond</button>
+                <button id="btn-reject" class="btn btn-danger">❌ Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Helper Scripts -->
+    <script>
+        function copyResult() {
+            const resultArea = document.getElementById('result-area');
+            if (resultArea && resultArea.value) {
+                navigator.clipboard.writeText(resultArea.value).then(() => {
+                    showTemporaryMessage('Copied to clipboard!', 'success');
+                }).catch(() => {
+                    resultArea.select();
+                    document.execCommand('copy');
+                    showTemporaryMessage('Copied to clipboard!', 'success');
+                });
+            }
+        }
+
+        function clearResult() {
+            const resultArea = document.getElementById('result-area');
+            if (resultArea) {
+                resultArea.value = '';
+                resultArea.style.height = 'auto';
+            }
+        }
+
+        function showTemporaryMessage(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `temporary-message ${type}`;
+            div.textContent = message;
+            div.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 6px;
+                z-index: 1001;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                animation: slideIn 0.3s ease;
+                background: ${type === 'success' ? '#00b894' : '#74b9ff'};
+                color: white;
+            `;
+            
+            document.body.appendChild(div);
+            
+            setTimeout(() => {
+                div.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => {
+                    if (document.body.contains(div)) {
+                        document.body.removeChild(div);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        // Add CSS animations
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+
+    <script src="taskpane.js"></script>
+</body>
+</html>
