@@ -242,6 +242,11 @@ class EmailAssistant {
     const lowerMessage = originalMessage.toLowerCase();
     const lowerResult = resultText.toLowerCase();
     
+    // ALWAYS show approval for write reply requests
+    if (this.isEmailReplyRequest(originalMessage)) {
+      return true;
+    }
+    
     // Show approval for proposal-like requests
     if (lowerMessage.includes('proposal') || lowerMessage.includes('propose') || lowerMessage.includes('draft')) {
       return true;
@@ -264,31 +269,59 @@ class EmailAssistant {
     // Add the proposal to chat
     UIComponents.addChatMessage('🤖', resultText);
     
-    // Determine if this is email content
-    const isEmailContent = resultText.toLowerCase().includes('subject:') || 
-                          (resultText.toLowerCase().includes('dear ') && resultText.toLowerCase().includes('regards'));
-    
-    if (isEmailContent) {
-      // Email proposal workflow
-      UIComponents.addChatMessage('📧', 'Would you like me to open this email in Outlook for you to review and send?');
-      
-      const response = await UIComponents.showChatApproval({
-        showPreview: true,
-        showOpenInOutlook: true,
-        emailContent: resultText
-      });
-      
-      await this.handleDirectApprovalResponse(response, resultText, originalMessage);
+    // Check if this is a write reply request
+    if (this.isEmailReplyRequest(originalMessage)) {
+      // Email reply workflow - use custom reply approval buttons
+      const response = await UIComponents.showReplyApproval(resultText);
+      await this.handleReplyApprovalResponse(response, resultText, originalMessage);
     } else {
-      // General proposal workflow
-      UIComponents.addChatMessage('💡', 'How would you like to proceed with this proposal?');
+      // Determine if this is general email content
+      const isEmailContent = resultText.toLowerCase().includes('subject:') || 
+                            (resultText.toLowerCase().includes('dear ') && resultText.toLowerCase().includes('regards'));
       
-      const response = await UIComponents.showChatApproval({
-        showPreview: false,
-        showOpenInOutlook: false
-      });
-      
-      await this.handleDirectApprovalResponse(response, resultText, originalMessage);
+      if (isEmailContent) {
+        // Email proposal workflow
+        UIComponents.addChatMessage('📧', 'Would you like me to open this email in Outlook for you to review and send?');
+        
+        const response = await UIComponents.showChatApproval({
+          showPreview: true,
+          showOpenInOutlook: true,
+          emailContent: resultText
+        });
+        
+        await this.handleDirectApprovalResponse(response, resultText, originalMessage);
+      } else {
+        // General proposal workflow
+        UIComponents.addChatMessage('💡', 'How would you like to proceed with this proposal?');
+        
+        const response = await UIComponents.showChatApproval({
+          showPreview: false,
+          showOpenInOutlook: false
+        });
+        
+        await this.handleDirectApprovalResponse(response, resultText, originalMessage);
+      }
+    }
+  }
+
+  private async handleReplyApprovalResponse(response: any, content: string, originalMessage: string): Promise<void> {
+    try {
+      if (response.type === 'accept') {
+        // Accept - open the reply in Outlook
+        UIComponents.addChatMessage('✅', 'Opening email reply in Outlook...');
+        await this.handleEmailReplyResponse(content, originalMessage);
+      } else if (response.type === 'edit') {
+        // Edit - allow inline editing of the reply content
+        UIComponents.addChatMessage('✏️', 'Edit the reply below and press "Update Reply" when done:');
+        await this.showInlineReplyEditor(content, originalMessage);
+      } else if (response.type === 'deny') {
+        // Deny - remove the reply from chat
+        UIComponents.addChatMessage('❌', 'Reply cancelled.');
+        // The reply message is already in chat, we just acknowledge the denial
+      }
+    } catch (error) {
+      console.error('Error handling reply approval response:', error);
+      UIComponents.addChatMessage('❌', 'Sorry, there was an error processing your response.');
     }
   }
 
@@ -344,6 +377,19 @@ class EmailAssistant {
         UIComponents.addChatMessage('📋', 'Copy the text above and paste it where you need it.');
       }
     }
+  }
+
+  private async showInlineReplyEditor(content: string, originalMessage: string): Promise<void> {
+    // Show an inline editor for the reply content
+    UIComponents.showInlineReplyEditor(content, async (editedContent: string) => {
+      // User finished editing - show the updated reply and approval buttons again
+      UIComponents.addChatMessage('🤖', editedContent);
+      const response = await UIComponents.showReplyApproval(editedContent);
+      await this.handleReplyApprovalResponse(response, editedContent, originalMessage);
+    }, () => {
+      // User cancelled editing
+      UIComponents.addChatMessage('❌', 'Edit cancelled.');
+    });
   }
 
   private async handleRevisionRequest(originalMessage: string, feedback: string): Promise<void> {
@@ -512,9 +558,6 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
         // Check if this should trigger approval workflow
         if (this.shouldShowApprovalButtons(originalMessage, resultText)) {
           await this.handleProposalApprovalFlow(resultText, originalMessage);
-        } else if (this.isEmailReplyRequest(originalMessage)) {
-          // Direct email reply (no approval needed)
-          await this.handleEmailReplyResponse(resultText, originalMessage);
         } else {
           // Regular chat response
           UIComponents.addChatMessage('🤖', resultText);

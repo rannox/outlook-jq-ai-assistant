@@ -186,6 +186,76 @@ export class UIComponents {
     }
   }
 
+  static showReplyApproval(replyContent: string): Promise<any> {
+    return new Promise((resolve) => {
+      const chatMessages = document.getElementById('chat-messages');
+      if (!chatMessages) {
+        console.error('Chat messages container not found');
+        resolve({ type: 'deny' });
+        return;
+      }
+
+      // Create inline approval buttons specifically for reply workflow
+      const approvalDiv = document.createElement('div');
+      approvalDiv.className = 'chat-message ai-message approval-message';
+      approvalDiv.id = 'inline-reply-approval-message';
+      
+      const buttonsHtml = `
+        <span class="message-icon">💬</span>
+        <div class="message-text">
+          <div class="inline-approval-buttons">
+            <button class="approval-btn accept-btn primary-btn" data-action="accept">
+              <span class="btn-icon">✅</span>
+              <span class="btn-text">Accept</span>
+            </button>
+            <button class="approval-btn edit-btn" data-action="edit">
+              <span class="btn-icon">✏️</span>
+              <span class="btn-text">Edit</span>
+            </button>
+            <button class="approval-btn reject-btn" data-action="deny">
+              <span class="btn-icon">❌</span>
+              <span class="btn-text">Deny</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      approvalDiv.innerHTML = buttonsHtml;
+      chatMessages.appendChild(approvalDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      const cleanup = () => {
+        const approvalMessage = document.getElementById('inline-reply-approval-message');
+        if (approvalMessage) {
+          approvalMessage.remove();
+        }
+      };
+
+      // Add click handlers for all buttons
+      approvalDiv.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const button = target.closest('.approval-btn') as HTMLButtonElement;
+        
+        if (!button) return;
+        
+        const action = button.getAttribute('data-action');
+        cleanup();
+
+        switch (action) {
+          case 'accept':
+            resolve({ type: 'accept' });
+            break;
+          case 'edit':
+            resolve({ type: 'edit' });
+            break;
+          case 'deny':
+            resolve({ type: 'deny' });
+            break;
+        }
+      });
+    });
+  }
+
   static showChatApproval(options: any): Promise<any> {
     return new Promise((resolve) => {
       const chatMessages = document.getElementById('chat-messages');
@@ -476,6 +546,71 @@ export class UIComponents {
 
     saveBtn?.addEventListener('click', onSaveClick);
     cancelBtn?.addEventListener('click', onCancelClick);
+  }
+
+  static showInlineReplyEditor(content: string, onSubmit: (value: string) => void, onCancel: () => void): void {
+    // Add reply editor form to chat area
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+
+    const editorDiv = document.createElement('div');
+    editorDiv.className = 'chat-message ai-message reply-editor';
+    editorDiv.innerHTML = `
+      <span class="message-icon">✏️</span>
+      <div class="message-text">
+        <div class="reply-editor-content">
+          <p><strong>Edit Reply</strong></p>
+          <textarea id="reply-editor-field" rows="8">${content}</textarea>
+          <div class="editor-buttons">
+            <button id="reply-update-btn" class="btn btn-success">✅ Update Reply</button>
+            <button id="reply-cancel-btn" class="btn btn-secondary">❌ Cancel</button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    chatMessages.appendChild(editorDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Focus the textarea and select all content for easy editing
+    const replyField = document.getElementById('reply-editor-field') as HTMLTextAreaElement;
+    const updateBtn = document.getElementById('reply-update-btn');
+    const cancelBtn = document.getElementById('reply-cancel-btn');
+
+    if (replyField) {
+      replyField.focus();
+      replyField.select();
+    }
+
+    const cleanup = () => {
+      editorDiv.remove();
+      updateBtn?.removeEventListener('click', onUpdateClick);
+      cancelBtn?.removeEventListener('click', onCancelClick);
+      replyField?.removeEventListener('keydown', onKeyDown);
+    };
+
+    const onUpdateClick = () => {
+      const value = replyField?.value?.trim() || '';
+      cleanup();
+      onSubmit(value);
+    };
+
+    const onCancelClick = () => {
+      cleanup();
+      onCancel();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && e.ctrlKey) {
+        onUpdateClick();
+      } else if (e.key === 'Escape') {
+        onCancelClick();
+      }
+    };
+
+    updateBtn?.addEventListener('click', onUpdateClick);
+    cancelBtn?.addEventListener('click', onCancelClick);
+    replyField?.addEventListener('keydown', onKeyDown);
   }
 
   static showInlineInput(title: string, placeholder: string, onSubmit: (value: string) => void, onCancel: () => void): void {
