@@ -43,8 +43,18 @@
             <div class="email-actions">
                 <button id="btn-refresh" class="btn btn-small">🔄 Refresh</button>
                 <button id="btn-test-connection" class="btn btn-small">🔗 Test Connection</button>
+                <button id="btn-classify-email" class="btn btn-small">🤖 Classify Email</button>
             </div>
         </div>
+
+        <!-- Email Classification Results -->
+        <div id="classification-section" class="section classification-section" style="display: none;">
+            <h3>🤖 AI Classification</h3>
+            <div id="classification-content" class="classification-content">
+                <!-- Classification results will be displayed here -->
+            </div>
+        </div>
+
 
         <!-- AI Conversational Interface - Now Primary -->
         <div class="ai-container">
@@ -80,7 +90,7 @@
                         <button class="suggestion-btn" data-suggestion="Extract the key tasks from this email">✅ Extract Tasks</button>
                         <button class="suggestion-btn" data-suggestion="Write a professional email reply to this email">📝 Write Reply</button>
                         <button class="suggestion-btn" data-suggestion="Summarize this email">📄 Summarize</button>
-                        <button class="suggestion-btn" data-suggestion="Analyze the sentiment of this email">😊 Sentiment</button>
+                        <button class="suggestion-btn" data-suggestion="What's the sentiment of this email?">😊 Sentiment</button>
                     </div>
                 </div>
                 

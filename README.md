@@ -1,13 +1,13 @@
 # JQuad AI Assistant - Outlook Add-in
 
-A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that provides an intelligent, conversational AI assistant for email management. Built with ambient agent patterns and human-in-the-loop capabilities.
+A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that provides an intelligent, conversational AI assistant for email management. Now enhanced with **LangChain @tool decorators** and **proper LangChain architecture** for robust email processing.
 
 ## ✨ Features
 
 ### 🗣️ **Conversational Interface**
 - **Natural Chat Experience**: Type requests in plain English like "Write a proposal to decline this meeting"
 - **Streaming Responses**: Real-time, word-by-word AI responses
-- **Smart Suggestions**: Quick action buttons for common tasks
+- **Smart Suggestions**: Quick action buttons for common tasks including LangChain features
 - **Context Awareness**: AI understands email content and conversation history
 
 ### 🔧 **Smart Email Actions**
@@ -15,6 +15,13 @@ A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that prov
 - **Content Analysis**: Summarize emails, extract tasks, analyze sentiment  
 - **Outlook Integration**: Seamlessly opens AI-generated emails in Outlook for editing
 - **Multiple Formats**: Handles various email types and languages
+
+### 🤖 **LangChain Agent Features**
+- **Exchange Integration**: Process new emails directly from Exchange servers
+- **Automatic Email Polling**: Background scheduler monitors for new emails (every 2 minutes)
+- **Tool Discovery**: View all available LangChain @tool decorated functions
+- **Real-time Progress**: Live progress bars for email processing operations
+- **Scheduler Control**: Start/stop automatic email monitoring from the UI
 
 ### 🤝 **Human-in-the-Loop Workflow**
 - **Smart Approval System**: Context-aware buttons that appear when AI needs feedback
@@ -26,8 +33,40 @@ A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that prov
 
 This is the **client-side** component of a separated architecture:
 
-- **Outlook Add-in** (this project): Lightweight UI client using TypeScript/Office.js
-- **Agent Service** (separate project): Python FastAPI + LangGraph backend
+- **Outlook Add-in** (this project): Enhanced UI client using TypeScript/Office.js with LangChain integration
+- **LangChain Email Agent** (separate project): Python FastAPI + LangChain @tool decorators + LangGraph backend
+
+### 🏗️ **New LangChain Architecture**
+
+The backend now follows **proper LangChain patterns**:
+
+```
+┌─── Microsoft Exchange ─────┐    ┌─── LLM ─────────────────────┐
+│  📧 Email 1                │    │  🧠 Claude/GPT              │
+│  📧 Email 2                │ ←──┤  📝 Classify & Reason       │
+│  📧 ...                    │    │  🎯 Auto-respond/Review     │
+└────────────────────────────┘    └─────────────────────────────┘
+           │                                    │
+           ▼                                    ▼
+    ┌─── @tool ───────┐                ┌─── Agent ────┐
+    │ get_new_emails  │◄───────────────┤ 🤖 LangGraph │
+    │ send_reply      │                │ Workflow     │
+    │ mark_as_read    │                └──────────────┘
+    └─────────────────┘                        │
+                                               │
+    ┌─── @tool ───────┐                        │
+    │ process_content │◄───────────────────────┤
+    │ search_similar  │                        │
+    │ generate_embed  │                        │
+    └─────────────────┘                        │
+                │                              │
+                ▼                              ▼
+    ┌─── @tool ───────┐                ┌─── Database ───┐
+    │ store_email     │◄───────────────┤ 🗄️ Supabase    │
+    │ store_analysis  │                │ PGVector       │
+    │ get_history     │                │ Persistence    │
+    └─────────────────┘                └────────────────┘
+```
 
 ## Prerequisites
 
@@ -101,7 +140,17 @@ The add-in connects to the agent service at `http://localhost:8000` by default. 
    - *"Summarize this email"*
    - *"Extract the key tasks"*
    - *"What's the sentiment here?"*
+   - *"Check scheduler status"*
+   - *"Show available tools"*
 3. **Get Instant Responses**: AI responds in real-time with relevant information
+
+### **LangChain Agent Features**
+Use the new feature buttons for advanced functionality:
+- **📧 Process New Emails** → Manually trigger Exchange email processing
+- **📊 Scheduler Status** → Check automatic email polling status
+- **⏰ Toggle Scheduler** → Start/stop background email monitoring
+- **🛠️ Show Tools** → View all available LangChain @tool functions
+- **📈 Show Progress** → Monitor real-time processing progress
 
 ### **Email Composition Workflow**
 ```
@@ -134,6 +183,8 @@ Use the suggestion buttons for instant actions:
 - **📝 Write Reply** → Generate professional email responses  
 - **📄 Summarize** → Get concise email summaries
 - **😊 Sentiment** → Analyze email tone and sentiment
+- **⏰ Scheduler** → Check automatic email polling status
+- **🛠️ Tools** → View available LangChain tools
 
 ## 🎯 Human-in-the-Loop Workflow
 
@@ -178,11 +229,13 @@ This add-in implements the ambient agent pattern inspired by [LangChain Academy]
 - **Intent Detection**: AI automatically understands what you want to accomplish
 - **Streaming Responses**: Real-time feedback for improved user experience
 
-### **LangGraph Integration**
-Compatible with [LangGraph Agent Inbox](https://github.com/langchain-ai/agent-inbox) standards:
-- **Interrupt Schema**: Follows standard `HumanInterrupt` and `HumanResponse` patterns
-- **Action Types**: Supports `accept`, `edit`, `ignore` actions optimized for email workflows
-- **Config-driven**: Approval buttons adapt based on agent configuration
+### **LangChain Integration**
+Enhanced with **proper LangChain @tool decorator patterns**:
+- **Tool Discovery**: UI automatically discovers and displays available @tool functions
+- **Progress Tracking**: Real-time progress bars for email processing operations  
+- **Scheduler Control**: Start/stop automatic email polling via API endpoints
+- **System Status**: Monitor Exchange, Database, and LLM connectivity
+- **Vector Search**: Integration with email embedding and similarity search
 - **WebSocket Communication**: Real-time updates via WebSocket connections
 
 ## 🛠️ Development Tips

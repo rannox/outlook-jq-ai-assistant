@@ -1,6 +1,6 @@
 /* global Office */
 
-import { apiClient } from './api-client';
+import { apiClient, ChatRequest, SystemStatus, EmailClassificationRequest } from './api-client';
 import { wsClient } from './websocket-client';
 import { UIComponents } from './ui-components';
 import { 
@@ -63,7 +63,18 @@ class EmailAssistant {
       UIComponents.setConnectionStatus(isHealthy);
       
       if (!isHealthy) {
-        throw new Error('Agent service is not responding');
+        throw new Error('Agent service health check failed');
+      }
+      
+      // Try to get system status for additional info, but don't fail if it doesn't exist
+      try {
+        const systemStatus = await apiClient.getSystemStatus();
+        if (systemStatus) {
+          UIComponents.showSystemStatus(systemStatus);
+        }
+      } catch (statusError) {
+        console.log('System status endpoint not available:', statusError);
+        // Don't fail the connection test for this
       }
     } catch (error) {
       console.error('Agent service connection failed:', error);
@@ -104,7 +115,7 @@ class EmailAssistant {
   }
 
   private initializeUI(): void {
-    // Chat interface (primary and only interface)
+    // Chat interface (primary interface)
     this.initializeChatInterface();
 
     // Utility buttons
@@ -112,6 +123,8 @@ class EmailAssistant {
       () => this.loadEmailContext());
     this.addEventListenerSafe('btn-test-connection', 'click', 
       () => this.testAgentConnection());
+    this.addEventListenerSafe('btn-classify-email', 'click', 
+      () => this.classifyCurrentEmail());
 
     console.log('UI event listeners initialized');
   }
@@ -498,20 +511,44 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
   private async handleChatConversation(message: string): Promise<void> {
     console.log(`[DEBUG] [${this.instanceId}] handleChatConversation called with: "${message}"`);
     
-    // Create a chat request using the new CHAT action from agent service
-    const request: ProcessEmailRequest = {
-      email_context: this.currentEmailContext!,
-      action: AgentAction.CHAT, // Use the new chat action that agent service now supports
-      thread_id: this.currentThreadId || undefined,
-      additional_context: this.generateContextForMessage(message)
+    if (!this.currentEmailContext) {
+      UIComponents.hideTypingIndicator();
+      UIComponents.addChatMessage('❌', 'No email context available. Please select an email first.');
+      return;
+    }
+
+    // Create a chat request using the new simplified API
+    const chatRequest: ChatRequest = {
+      subject: this.currentEmailContext.subject || 'No Subject',
+      sender: this.currentEmailContext.sender || 'Unknown Sender',
+      body: this.currentEmailContext.body || 'No Content',
+      message: message
     };
 
     try {
-      const response = await this.sendChatRequestToAgent(request, message);
+      console.log('Sending chat request:', chatRequest);
+      const response = await apiClient.chatAboutEmail(chatRequest);
+      
+      console.log('Chat response received:', response);
+      UIComponents.hideTypingIndicator();
+      
+      if (response.success) {
+        // Handle different types of responses
+        if (this.isEmailReplyRequest(message)) {
+          // For email reply requests, show approval workflow
+          await this.handleProposalApprovalFlow(response.response, message);
+        } else {
+          // Regular chat response
+          UIComponents.addChatMessage('🤖', response.response);
+        }
+      } else {
+        console.error('Chat response error:', response.error);
+        UIComponents.addChatMessage('❌', `Error: ${response.error || 'Unknown error occurred'}`);
+      }
     } catch (error) {
       console.error('Error in chat conversation:', error);
       UIComponents.hideTypingIndicator();
-      UIComponents.addChatMessage('❌', 'Sorry, I encountered an error. Please try again.');
+      UIComponents.addChatMessage('❌', `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -623,6 +660,79 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     } else {
       // Standard approval workflow
       await this.handleStandardProposalWorkflow(data);
+    }
+  }
+
+  // Email Classification functionality
+  private async classifyCurrentEmail(): Promise<void> {
+    if (!this.currentEmailContext) {
+      UIComponents.showError('No email context available. Please select an email first.');
+      return;
+    }
+
+    try {
+      // Show loading state
+      UIComponents.showClassificationLoading();
+
+      // Create classification request
+      const request: EmailClassificationRequest = {
+        subject: this.currentEmailContext.subject || 'No Subject',
+        sender: this.currentEmailContext.sender || 'Unknown Sender',
+        body: this.currentEmailContext.body || 'No Content',
+        to: this.currentEmailContext.to
+      };
+
+      console.log('Classifying email:', request);
+
+      // Get classification from API
+      const classification = await apiClient.classifyEmail(request);
+      
+      console.log('Classification result:', classification);
+
+      // Display results
+      UIComponents.showClassificationResults(classification);
+
+      // For information-needed emails, get specific guidance
+      if (classification.classification === 'information-needed') {
+        this.getEmailGuidance();
+      }
+
+      // Add summary to chat
+      const icon = classification.classification === 'ignore' ? '🗑️' : 
+                   classification.classification === 'auto-reply' ? '🤖' : '👤';
+      const confidencePercent = Math.round(classification.confidence * 100);
+      
+      UIComponents.addChatMessage(icon, 
+        `Email classified as **${classification.classification}** with ${confidencePercent}% confidence`);
+
+    } catch (error) {
+      console.error('Error classifying email:', error);
+      UIComponents.hideClassificationSection();
+      UIComponents.showError('Failed to classify email. Please check the agent service connection.');
+    }
+  }
+
+  private async getEmailGuidance(): Promise<void> {
+    if (!this.currentEmailContext) return;
+
+    try {
+      const guidanceRequest: ChatRequest = {
+        subject: this.currentEmailContext.subject || 'No Subject',
+        sender: this.currentEmailContext.sender || 'Unknown Sender',
+        body: this.currentEmailContext.body || 'No Content',
+        message: "What specific information or actions are needed for this email?"
+      };
+
+      const guidance = await apiClient.getEmailGuidance(guidanceRequest);
+      
+      if (guidance.success) {
+        UIComponents.updateGuidanceContent(guidance.response);
+      } else {
+        UIComponents.updateGuidanceContent('Unable to get specific guidance at this time.');
+      }
+    } catch (error) {
+      console.error('Error getting email guidance:', error);
+      UIComponents.updateGuidanceContent('Error loading guidance. Please try again.');
     }
   }
 

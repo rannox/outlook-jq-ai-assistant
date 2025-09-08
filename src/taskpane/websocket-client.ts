@@ -95,10 +95,12 @@ export class WebSocketClient {
         break;
         
       case 'chunk':
+      case 'stream':
         if (this.onStreamData) {
           this.onStreamData(message.data);
         }
         break;
+        
         
       case 'interrupt':
         if (this.onStatusUpdate) {
@@ -112,6 +114,7 @@ export class WebSocketClient {
         break;
         
       case 'complete':
+      case 'completed':
         if (this.onStatusUpdate) {
           this.onStatusUpdate({
             status: 'completed',
@@ -126,7 +129,7 @@ export class WebSocketClient {
         if (this.onStatusUpdate) {
           this.onStatusUpdate({
             status: 'error',
-            message: message.data.error || 'An error occurred during processing'
+            message: message.data?.error || message.data?.message || 'An error occurred during processing'
           });
         }
         break;
@@ -144,6 +147,7 @@ export class WebSocketClient {
     this.onStreamData = callback;
   }
 
+
   disconnect(): void {
     if (this.ws) {
       // Set code 1000 for normal closure to prevent reconnection
@@ -152,8 +156,6 @@ export class WebSocketClient {
     }
     this.reconnectAttempts = 0;
   }
-
-
 
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;

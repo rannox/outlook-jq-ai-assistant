@@ -806,4 +806,412 @@ export class UIComponents {
       streamArea.textContent = '';
     }
   }
+
+  static showSystemStatus(status: any): void {
+    if (!status) {
+      this.addChatMessage('🤖', '🏥 **System Status**: Service is responding but status details unavailable');
+      return;
+    }
+    
+    const statusValue = status.status || 'unknown';
+    
+    // Handle different response formats
+    if (status.checks) {
+      // Expected format with checks object
+      const checks = status.checks;
+      const message = status.message || 'No additional information';
+      
+      const statusMessage = `🏥 **System Status: ${statusValue}**
+• Exchange: ${checks.exchange ? '✅ Connected' : '❌ Disconnected'}
+• Database: ${checks.database ? '✅ Connected' : '❌ Disconnected'}  
+• LLM: ${checks.llm ? '✅ Available' : '❌ Unavailable'}
+• Message: ${message}`;
+      
+      this.addChatMessage('🤖', statusMessage.replace(/\n/g, '<br>'));
+    } else if (status.tools) {
+      // Actual format from your backend
+      const toolCount = Array.isArray(status.tools) ? status.tools.length : 0;
+      const statusMessage = `🏥 **System Status: ${statusValue}**
+• LangChain Tools: ${toolCount} available
+• Service: ✅ Running
+• Backend: ✅ Responding`;
+      
+      this.addChatMessage('🤖', statusMessage.replace(/\n/g, '<br>'));
+    } else {
+      // Minimal format
+      const statusMessage = `🏥 **System Status: ${statusValue}**
+• Service: ✅ Running and responding`;
+      
+      this.addChatMessage('🤖', statusMessage.replace(/\n/g, '<br>'));
+    }
+  }
+
+  static showClassificationResults(classification: any): void {
+    const section = document.getElementById('classification-section');
+    const content = document.getElementById('classification-content');
+    
+    if (!section || !content) return;
+
+    // Get classification emoji and display name
+    const getClassificationIcon = (type: string) => {
+      switch (type) {
+        case 'ignore': return '🗑️';
+        case 'auto-reply': return '🤖';
+        case 'information-needed': return '👤';
+        default: return '❓';
+      }
+    };
+
+    const getClassificationName = (type: string) => {
+      switch (type) {
+        case 'ignore': return 'Ignore';
+        case 'auto-reply': return 'Auto-Reply';
+        case 'information-needed': return 'Information Needed';
+        default: return 'Unknown';
+      }
+    };
+
+    const confidencePercentage = Math.round(classification.confidence * 100);
+    
+    content.innerHTML = `
+      <div class="classification-result ${classification.classification}">
+        <div class="classification-header">
+          <div class="classification-badge ${classification.classification}">
+            ${getClassificationIcon(classification.classification)} ${getClassificationName(classification.classification)}
+          </div>
+          <div class="confidence-score">
+            ${confidencePercentage}% confidence
+          </div>
+        </div>
+        
+        <div class="classification-reasoning">
+          "${classification.reasoning}"
+        </div>
+        
+        ${classification.auto_response ? `
+          <div class="auto-response-section">
+            <div class="auto-response-header">
+              <span>🤖</span>
+              <span>Suggested Auto-Reply</span>
+            </div>
+            <div class="auto-response-text">${classification.auto_response}</div>
+            <div class="classification-actions">
+              <button class="btn btn-success" id="use-auto-reply-btn">
+                ✅ Use Reply
+              </button>
+              <button class="btn btn-warning" id="edit-auto-reply-btn">
+                ✏️ Edit Reply
+              </button>
+            </div>
+          </div>
+        ` : ''}
+        
+        ${classification.classification === 'information-needed' ? `
+          <div class="guidance-section">
+            <div class="guidance-header">
+              <span>💡</span>
+              <span>Getting Specific Guidance...</span>
+            </div>
+            <div class="guidance-text" id="guidance-content">
+              <div class="classification-loading">
+                <div class="spinner"></div>
+                Loading guidance...
+              </div>
+            </div>
+            <div id="guidance-actions" class="guidance-actions" style="display: none;">
+              <button class="btn btn-warning" id="add-notes-btn">
+                📝 Add My Notes
+              </button>
+              <button class="btn btn-success" id="draft-reply-btn">
+                ✏️ Draft Reply
+              </button>
+            </div>
+            <div id="user-notes-section" class="user-notes-section" style="display: none;">
+              <div class="notes-header">
+                <span>📝</span>
+                <span>My Notes & Answers</span>
+              </div>
+              <textarea id="user-notes-input" class="user-notes-input" placeholder="Add your notes, answers to the questions, or any relevant information..." rows="6"></textarea>
+              <div class="notes-actions">
+                <button class="btn btn-success" id="save-notes-btn">💾 Save Notes</button>
+                <button class="btn btn-secondary" id="cancel-notes-btn">❌ Cancel</button>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+        
+        <div class="classification-metadata" style="margin-top: 12px; font-size: 12px; color: #6c757d;">
+          ${classification.context_enriched ? '🧠 Used conversation history' : '📄 Based on email content only'} • 
+          ${classification.action_completed ? '✅ Action completed' : '⏳ Action pending'}
+        </div>
+      </div>
+    `;
+
+    section.style.display = 'block';
+
+    // Add event listeners for auto-reply buttons
+    if (classification.auto_response) {
+      const useBtn = document.getElementById('use-auto-reply-btn');
+      const editBtn = document.getElementById('edit-auto-reply-btn');
+      
+      if (useBtn) {
+        useBtn.addEventListener('click', () => {
+          this.useAutoReply(classification.auto_response);
+        });
+      }
+      
+      if (editBtn) {
+        editBtn.addEventListener('click', () => {
+          this.editAutoReply(classification.auto_response);
+        });
+      }
+    }
+
+    // Add event listeners for information-needed buttons
+    if (classification.classification === 'information-needed') {
+      const addNotesBtn = document.getElementById('add-notes-btn');
+      const draftReplyBtn = document.getElementById('draft-reply-btn');
+      const saveNotesBtn = document.getElementById('save-notes-btn');
+      const cancelNotesBtn = document.getElementById('cancel-notes-btn');
+      
+      if (addNotesBtn) {
+        addNotesBtn.addEventListener('click', () => {
+          this.showNotesSection();
+        });
+      }
+      
+      if (draftReplyBtn) {
+        draftReplyBtn.addEventListener('click', () => {
+          this.draftReplyWithGuidance(classification);
+        });
+      }
+      
+      if (saveNotesBtn) {
+        saveNotesBtn.addEventListener('click', () => {
+          this.saveUserNotes();
+        });
+      }
+      
+      if (cancelNotesBtn) {
+        cancelNotesBtn.addEventListener('click', () => {
+          this.hideNotesSection();
+        });
+      }
+    }
+  }
+
+  static async useAutoReply(replyText: string): Promise<void> {
+    try {
+      // Use the existing reply functionality
+      const { createReply } = await import('../utils/office-helpers');
+      await createReply(replyText);
+      this.addChatMessage('✅', 'Auto-reply opened in Outlook for review and sending.');
+    } catch (error) {
+      console.error('Error using auto-reply:', error);
+      this.addChatMessage('❌', 'Failed to open auto-reply in Outlook.');
+    }
+  }
+
+  static editAutoReply(replyText: string): void {
+    // Add the reply to chat for editing
+    this.addChatMessage('📝', 'Here\'s the suggested reply for you to edit:');
+    this.addChatMessage('🤖', replyText);
+    
+    // Show inline editor
+    this.showInlineReplyEditor(replyText, async (editedContent: string) => {
+      await this.useAutoReply(editedContent);
+    }, () => {
+      this.addChatMessage('❌', 'Edit cancelled.');
+    });
+  }
+
+  static updateGuidanceContent(guidance: string): void {
+    const guidanceContent = document.getElementById('guidance-content');
+    const guidanceActions = document.getElementById('guidance-actions');
+    
+    if (guidanceContent) {
+      // Format the guidance text with proper line breaks and structure
+      const formattedGuidance = this.formatGuidanceText(guidance);
+      guidanceContent.innerHTML = `<div class="guidance-text">${formattedGuidance}</div>`;
+      
+      // Show the action buttons
+      if (guidanceActions) {
+        guidanceActions.style.display = 'flex';
+      }
+    }
+  }
+
+  static formatGuidanceText(text: string): string {
+    // Use a much simpler, robust approach without complex regex patterns
+    return this.parseGuidanceStructure(text);
+  }
+
+  static parseGuidanceStructure(text: string): string {
+    // Clean the text first
+    const cleaned = text.replace(/\s+/g, ' ').trim();
+    
+    // Split by periods followed by numbers to find numbered items
+    const parts = cleaned.split(/(?=\d+\.\s)/);
+    let result = '';
+    
+    for (let part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      
+      // Check if this part starts with a number
+      const match = trimmed.match(/^(\d+)\.\s+(.+)$/);
+      if (match) {
+        const [, number, content] = match;
+        result += this.formatGuidanceItem(number, content);
+      } else {
+        // This is probably intro text or other content
+        if (trimmed.length > 5) {
+          result += this.formatGuidanceParagraph(trimmed);
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  static formatGuidanceItem(number: string, content: string): string {
+    // Process the content to handle sub-items and formatting
+    const processedContent = this.processItemContent(content);
+    
+    return `<div class="guidance-item">
+      <span class="guidance-number">${number}.</span>
+      <span class="guidance-text">${processedContent}</span>
+    </div>`;
+  }
+
+  static formatGuidanceParagraph(content: string): string {
+    const processedContent = this.processItemContent(content);
+    return `<div class="guidance-paragraph">${processedContent}</div>`;
+  }
+
+  static processItemContent(content: string): string {
+    let processed = content;
+    
+    // Handle bold text
+    processed = processed.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+    
+    // Handle special keywords first
+    processed = processed.replace(/(Why\?|Next Step:|Actionable Response Template:|Action Required:|Note:)/gi, '<span class="guidance-keyword">$1</span>');
+    
+    // Handle dash items - but be more careful about the splitting
+    if (processed.includes(' - ')) {
+      const parts = processed.split(' - ');
+      if (parts.length > 1) {
+        const firstPart = parts[0];
+        const dashItems = parts.slice(1);
+        
+        processed = firstPart;
+        for (let item of dashItems) {
+          if (item.trim()) {
+            processed += `<div class="guidance-sub-item">• ${item.trim()}</div>`;
+          }
+        }
+      }
+    }
+    
+    // Handle questions
+    processed = processed.replace(/\?([^?]*?)(?=<|$)/g, '?<span class="guidance-question-mark"></span>$1');
+    
+    return processed;
+  }
+
+  static formatInlineContent(text: string): string {
+    return text
+      // Format bold text with **
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      // Format italic text with *
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      // Format questions or important notes
+      .replace(/\*([^*]+)\?\*/g, '<span class="guidance-question">$1?</span>')
+      // Clean up extra spaces
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  static showNotesSection(): void {
+    const notesSection = document.getElementById('user-notes-section');
+    const notesInput = document.getElementById('user-notes-input') as HTMLTextAreaElement;
+    
+    if (notesSection) {
+      notesSection.style.display = 'block';
+      if (notesInput) {
+        notesInput.focus();
+      }
+    }
+  }
+
+  static hideNotesSection(): void {
+    const notesSection = document.getElementById('user-notes-section');
+    if (notesSection) {
+      notesSection.style.display = 'none';
+    }
+  }
+
+  static saveUserNotes(): void {
+    const notesInput = document.getElementById('user-notes-input') as HTMLTextAreaElement;
+    if (notesInput && notesInput.value.trim()) {
+      const notes = notesInput.value.trim();
+      this.addChatMessage('📝', `**My Notes:**\n${notes}`);
+      this.addChatMessage('✅', 'Notes saved! You can now draft a reply or continue working with this email.');
+      
+      // Hide the notes section
+      this.hideNotesSection();
+      
+      // Clear the input for next use
+      notesInput.value = '';
+    } else {
+      this.addChatMessage('⚠️', 'Please add some notes before saving.');
+    }
+  }
+
+  static async draftReplyWithGuidance(classification: any): Promise<void> {
+    const notesInput = document.getElementById('user-notes-input') as HTMLTextAreaElement;
+    const userNotes = notesInput ? notesInput.value.trim() : '';
+    
+    // Create a context-aware message for drafting
+    let draftMessage = 'Please help me draft a professional reply to this email.';
+    
+    if (userNotes) {
+      draftMessage += ` Here are my notes and information I've gathered: ${userNotes}`;
+    }
+    
+    draftMessage += ' Please create a complete, professional email response.';
+    
+    // Add to chat and trigger the chat workflow
+    this.addChatMessage('👤', draftMessage);
+    this.addChatMessage('🤖', 'I\'ll help you draft a reply based on the information you\'ve provided...');
+    
+    // Trigger the chat system (this would need to be connected to the main chat system)
+    // For now, we'll show a message encouraging them to use the chat
+    this.addChatMessage('💡', 'You can also use the chat below to refine your reply or ask for specific help with wording.');
+  }
+
+  static showClassificationLoading(): void {
+    const section = document.getElementById('classification-section');
+    const content = document.getElementById('classification-content');
+    
+    if (!section || !content) return;
+
+    content.innerHTML = `
+      <div class="classification-loading">
+        <div class="spinner"></div>
+        Analyzing email with AI...
+      </div>
+    `;
+
+    section.style.display = 'block';
+  }
+
+  static hideClassificationSection(): void {
+    const section = document.getElementById('classification-section');
+    if (section) {
+      section.style.display = 'none';
+    }
+  }
+
 }
