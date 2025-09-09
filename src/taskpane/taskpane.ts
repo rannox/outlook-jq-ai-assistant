@@ -563,9 +563,9 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
         chatInput.style.height = 'auto';
       }
 
-      // Add user action to chat (localized)
+      // Add user action to chat (localized) - display as user message on right side
       const strings = localizationManager.getStrings();
-      UIComponents.addChatMessage('👤', `🤖 ${strings.buttons.classifyEmail}`);
+      UIComponents.addUserMessage(strings.buttons.classifyEmail);
       
       // Show typing indicator
       UIComponents.showTypingIndicator();
@@ -1429,21 +1429,16 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
   }
 
   private extractClarifyingQuestionsFromCurrentView(): string[] {
-    // Look for the clarifying questions in the current interface
-    const questionCards = document.querySelectorAll('[style*="rgba(255, 193, 7, 0.1)"]');
-    
-    for (let i = 0; i < questionCards.length; i++) {
-      const card = questionCards[i];
-      const cardText = card.textContent || '';
-      
-      if (cardText.includes('Clarifying Questions:')) {
-        // Extract questions from the stored classification data if available
-        if (this.lastClassificationData && this.lastClassificationData.interrupt_data && this.lastClassificationData.interrupt_data.clarifying_questions) {
-          return this.lastClassificationData.interrupt_data.clarifying_questions;
-        }
-      }
+    // Directly use the stored classification data instead of trying to parse DOM
+    // This is more reliable than searching for DOM elements with specific styles
+    if (this.lastClassificationData && 
+        this.lastClassificationData.interrupt_data && 
+        this.lastClassificationData.interrupt_data.clarifying_questions) {
+      console.log('✅ Found clarifying questions in stored data:', this.lastClassificationData.interrupt_data.clarifying_questions);
+      return this.lastClassificationData.interrupt_data.clarifying_questions;
     }
     
+    console.log('❌ No clarifying questions found in stored data. lastClassificationData:', this.lastClassificationData);
     return [];
   }
 
@@ -1572,9 +1567,12 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
   }
 
   private displayClassificationInChat(classification: any): void {
+    // Use more universally supported emoji for better compatibility
     const icon = classification.classification === 'ignore' ? '🗑️' : 
                  classification.classification === 'auto-reply' ? '🤖' : '👤';
     const confidencePercent = Math.round(classification.confidence * 100);
+    
+    console.log('[DEBUG] Classification icon:', icon, 'for type:', classification.classification);
     
     // Create a compact, styled classification display similar to the screenshot
     const classificationCard = this.createClassificationCard(classification, confidencePercent);

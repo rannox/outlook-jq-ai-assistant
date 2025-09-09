@@ -136,10 +136,11 @@ export class UIComponents {
     
     // Use safe HTML formatting for the text content
     const formattedText = formatChatText(text);
-    const safeIcon = escapeHtml(icon);
+    // For emojis, use them directly - they should display properly in modern browsers
+    const displayIcon = icon || '🤖'; // Default fallback to robot emoji
     
     messageDiv.innerHTML = `
-      <span class="message-icon">${safeIcon}</span>
+      <span class="message-icon">${displayIcon}</span>
       <span class="message-text">${formattedText}</span>
     `;
     
@@ -178,11 +179,11 @@ export class UIComponents {
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ai-message${isThinking ? ' thinking' : ''}`;
     
-    // Escape only the icon, but trust the HTML content (for classification cards, etc.)
-    const safeIcon = escapeHtml(icon);
+    // For emojis, use them directly - they should display properly in modern browsers
+    const displayIcon = icon || '🤖'; // Default fallback to robot emoji
     
     messageDiv.innerHTML = `
-      <span class="message-icon">${safeIcon}</span>
+      <span class="message-icon">${displayIcon}</span>
       <span class="message-text">${htmlContent}</span>
     `;
     
