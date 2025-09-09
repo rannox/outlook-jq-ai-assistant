@@ -5,6 +5,7 @@ export interface EmailContext {
   body: string;
   isCompose?: boolean;
   threadId?: string;
+  internetMessageId?: string; // Outlook unique message ID for fast lookups
 }
 
 export interface ProcessEmailRequest {

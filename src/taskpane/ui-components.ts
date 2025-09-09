@@ -847,157 +847,8 @@ export class UIComponents {
   }
 
   static showClassificationResults(classification: any): void {
-    const section = document.getElementById('classification-section');
-    const content = document.getElementById('classification-content');
-    
-    if (!section || !content) return;
-
-    // Get classification emoji and display name
-    const getClassificationIcon = (type: string) => {
-      switch (type) {
-        case 'ignore': return '🗑️';
-        case 'auto-reply': return '🤖';
-        case 'information-needed': return '👤';
-        default: return '❓';
-      }
-    };
-
-    const getClassificationName = (type: string) => {
-      switch (type) {
-        case 'ignore': return 'Ignore';
-        case 'auto-reply': return 'Auto-Reply';
-        case 'information-needed': return 'Information Needed';
-        default: return 'Unknown';
-      }
-    };
-
-    const confidencePercentage = Math.round(classification.confidence * 100);
-    
-    content.innerHTML = `
-      <div class="classification-result ${classification.classification}">
-        <div class="classification-header">
-          <div class="classification-badge ${classification.classification}">
-            ${getClassificationIcon(classification.classification)} ${getClassificationName(classification.classification)}
-          </div>
-          <div class="confidence-score">
-            ${confidencePercentage}% confidence
-          </div>
-        </div>
-        
-        <div class="classification-reasoning">
-          "${classification.reasoning}"
-        </div>
-        
-        ${classification.auto_response ? `
-          <div class="auto-response-section">
-            <div class="auto-response-header">
-              <span>🤖</span>
-              <span>Suggested Auto-Reply</span>
-            </div>
-            <div class="auto-response-text">${classification.auto_response}</div>
-            <div class="classification-actions">
-              <button class="btn btn-success" id="use-auto-reply-btn">
-                ✅ Use Reply
-              </button>
-              <button class="btn btn-warning" id="edit-auto-reply-btn">
-                ✏️ Edit Reply
-              </button>
-            </div>
-          </div>
-        ` : ''}
-        
-        ${classification.classification === 'information-needed' ? `
-          <div class="guidance-section">
-            <div class="guidance-header">
-              <span>💡</span>
-              <span>Getting Specific Guidance...</span>
-            </div>
-            <div class="guidance-text" id="guidance-content">
-              <div class="classification-loading">
-                <div class="spinner"></div>
-                Loading guidance...
-              </div>
-            </div>
-            <div id="guidance-actions" class="guidance-actions" style="display: none;">
-              <button class="btn btn-warning" id="add-notes-btn">
-                📝 Add My Notes
-              </button>
-              <button class="btn btn-success" id="draft-reply-btn">
-                ✏️ Draft Reply
-              </button>
-            </div>
-            <div id="user-notes-section" class="user-notes-section" style="display: none;">
-              <div class="notes-header">
-                <span>📝</span>
-                <span>My Notes & Answers</span>
-              </div>
-              <textarea id="user-notes-input" class="user-notes-input" placeholder="Add your notes, answers to the questions, or any relevant information..." rows="6"></textarea>
-              <div class="notes-actions">
-                <button class="btn btn-success" id="save-notes-btn">💾 Save Notes</button>
-                <button class="btn btn-secondary" id="cancel-notes-btn">❌ Cancel</button>
-              </div>
-            </div>
-          </div>
-        ` : ''}
-        
-        <div class="classification-metadata" style="margin-top: 12px; font-size: 12px; color: #6c757d;">
-          ${classification.context_enriched ? '🧠 Used conversation history' : '📄 Based on email content only'} • 
-          ${classification.action_completed ? '✅ Action completed' : '⏳ Action pending'}
-        </div>
-      </div>
-    `;
-
-    section.style.display = 'block';
-
-    // Add event listeners for auto-reply buttons
-    if (classification.auto_response) {
-      const useBtn = document.getElementById('use-auto-reply-btn');
-      const editBtn = document.getElementById('edit-auto-reply-btn');
-      
-      if (useBtn) {
-        useBtn.addEventListener('click', () => {
-          this.useAutoReply(classification.auto_response);
-        });
-      }
-      
-      if (editBtn) {
-        editBtn.addEventListener('click', () => {
-          this.editAutoReply(classification.auto_response);
-        });
-      }
-    }
-
-    // Add event listeners for information-needed buttons
-    if (classification.classification === 'information-needed') {
-      const addNotesBtn = document.getElementById('add-notes-btn');
-      const draftReplyBtn = document.getElementById('draft-reply-btn');
-      const saveNotesBtn = document.getElementById('save-notes-btn');
-      const cancelNotesBtn = document.getElementById('cancel-notes-btn');
-      
-      if (addNotesBtn) {
-        addNotesBtn.addEventListener('click', () => {
-          this.showNotesSection();
-        });
-      }
-      
-      if (draftReplyBtn) {
-        draftReplyBtn.addEventListener('click', () => {
-          this.draftReplyWithGuidance(classification);
-        });
-      }
-      
-      if (saveNotesBtn) {
-        saveNotesBtn.addEventListener('click', () => {
-          this.saveUserNotes();
-        });
-      }
-      
-      if (cancelNotesBtn) {
-        cancelNotesBtn.addEventListener('click', () => {
-          this.hideNotesSection();
-        });
-      }
-    }
+    // Classification section removed - results now shown in chat
+    return;
   }
 
   static async useAutoReply(replyText: string): Promise<void> {
@@ -1192,26 +1043,9 @@ export class UIComponents {
   }
 
   static showClassificationLoading(): void {
-    const section = document.getElementById('classification-section');
-    const content = document.getElementById('classification-content');
-    
-    if (!section || !content) return;
-
-    content.innerHTML = `
-      <div class="classification-loading">
-        <div class="spinner"></div>
-        Analyzing email with AI...
-      </div>
-    `;
-
-    section.style.display = 'block';
+    // Classification section removed - loading shown in chat
+    return;
   }
 
-  static hideClassificationSection(): void {
-    const section = document.getElementById('classification-section');
-    if (section) {
-      section.style.display = 'none';
-    }
-  }
 
 }

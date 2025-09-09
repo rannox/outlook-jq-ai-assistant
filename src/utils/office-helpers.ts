@@ -29,7 +29,8 @@ export async function getCurrentEmailContext(): Promise<EmailContext | null> {
           sender,
           to,
           body,
-          isCompose
+          isCompose,
+          internetMessageId: item.internetMessageId || undefined // Add unique Outlook message ID
         };
         
         console.log('Email context created:', context);

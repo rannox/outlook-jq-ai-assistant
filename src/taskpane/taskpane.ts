@@ -17,12 +17,16 @@ import {
   MeetingRequest 
 } from '../models/types';
 
+// Removed WorkflowStateManager - no more caching, always fetch fresh data
+
 class EmailAssistant {
   private currentEmailContext: EmailContext | null = null;
   private currentThreadId: string | null = null;
   private instanceId: string;
   private lastApprovedDraft: any = null; // Store the last approved draft for successful execution
   private chatInitialized: boolean = false; // Prevent multiple chat interface initializations
+  // Removed workflowManager - no more caching
+  private lastClassificationData: any = null;
 
   constructor() {
     this.instanceId = Math.random().toString(36).substr(2, 9);
@@ -123,8 +127,6 @@ class EmailAssistant {
       () => this.loadEmailContext());
     this.addEventListenerSafe('btn-test-connection', 'click', 
       () => this.testAgentConnection());
-    this.addEventListenerSafe('btn-classify-email', 'click', 
-      () => this.classifyCurrentEmail());
 
     console.log('UI event listeners initialized');
   }
@@ -476,6 +478,13 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     const message = chatInput.value.trim();
     if (!message) return;
 
+    // Check if this is a classify email request
+    if (message === 'classify-email') {
+      // Handle classify email as a special action, not a chat message
+      await this.handleClassifyEmailFromChat();
+      return;
+    }
+
     // Disable input while processing
     chatInput.disabled = true;
     chatSendBtn.disabled = true;
@@ -506,7 +515,30 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     }
   }
 
+  private async handleClassifyEmailFromChat(): Promise<void> {
+    try {
+      // Clear input
+      const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
+      if (chatInput) {
+        chatInput.value = '';
+        chatInput.style.height = 'auto';
+      }
 
+      // Add user action to chat
+      UIComponents.addChatMessage('👤', '🤖 Classify Email');
+      
+      // Show typing indicator
+      UIComponents.showTypingIndicator();
+
+      // Call the existing classify email functionality
+      await this.classifyCurrentEmail();
+
+    } catch (error) {
+      console.error('Error in handleClassifyEmailFromChat:', error);
+      UIComponents.hideTypingIndicator();
+      UIComponents.addChatMessage('❌', 'Sorry, I encountered an error while classifying the email. Please try again.');
+    }
+  }
 
   private async handleChatConversation(message: string): Promise<void> {
     console.log(`[DEBUG] [${this.instanceId}] handleChatConversation called with: "${message}"`);
@@ -674,41 +706,1334 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
       // Show loading state
       UIComponents.showClassificationLoading();
 
+      // Always process emails fresh - no caching
+      console.log('🔄 Processing email with fresh classification request');
+
       // Create classification request
       const request: EmailClassificationRequest = {
         subject: this.currentEmailContext.subject || 'No Subject',
         sender: this.currentEmailContext.sender || 'Unknown Sender',
         body: this.currentEmailContext.body || 'No Content',
-        to: this.currentEmailContext.to
+        to: this.currentEmailContext.to,
+        message_id: this.currentEmailContext.internetMessageId // Include Outlook message ID for fast lookups
       };
 
-      console.log('Classifying email:', request);
+      console.log('Classifying NEW email:', request);
 
       // Get classification from API
       const classification = await apiClient.classifyEmail(request);
       
       console.log('Classification result:', classification);
 
-      // Display results
-      UIComponents.showClassificationResults(classification);
+      // Hide typing indicator if it's showing
+      UIComponents.hideTypingIndicator();
 
-      // For information-needed emails, get specific guidance
-      if (classification.classification === 'information-needed') {
-        this.getEmailGuidance();
+      // Check if the backend sent interrupt data (based on your logs)
+      if (classification.interrupted && classification.interrupt_data && classification.thread_id) {
+        console.log('🛑 Human approval required - showing decision interface');
+        this.displayHumanDecisionInterface(classification);
+      } else {
+        // Display normal classification results in chat
+        this.displayClassificationInChat(classification);
+
+        // For information-needed emails, get specific guidance and show it in chat
+        if (classification.classification === 'information-needed') {
+          await this.displayGuidanceInChat();
+        }
       }
-
-      // Add summary to chat
-      const icon = classification.classification === 'ignore' ? '🗑️' : 
-                   classification.classification === 'auto-reply' ? '🤖' : '👤';
-      const confidencePercent = Math.round(classification.confidence * 100);
-      
-      UIComponents.addChatMessage(icon, 
-        `Email classified as **${classification.classification}** with ${confidencePercent}% confidence`);
 
     } catch (error) {
       console.error('Error classifying email:', error);
-      UIComponents.hideClassificationSection();
+      UIComponents.hideTypingIndicator();
       UIComponents.showError('Failed to classify email. Please check the agent service connection.');
+    }
+  }
+
+  private displayHumanDecisionInterface(classification: any): void {
+    // Store the thread ID and classification data for later use
+    this.currentThreadId = classification.thread_id;
+    this.lastClassificationData = classification;
+    
+    // Extract data from interrupt_data (based on your backend logs)
+    const interruptData = classification.interrupt_data || {};
+    const options = interruptData.options || [];
+    
+    console.log('📋 Interrupt data:', interruptData);
+    console.log('🎯 Available options:', options);
+    console.log('🔍 Classification data:', classification);
+    
+    // Get the best available data sources
+    const finalClassification = interruptData.classification || classification.classification || 'UNKNOWN';
+    const finalConfidence = interruptData.confidence || classification.confidence || 0;
+    const finalReasoning = interruptData.reasoning || classification.reasoning || 'No reasoning provided';
+    const proposedResponse = interruptData.proposed_auto_reply || interruptData.auto_response || classification.auto_response || null;
+    const clarifyingQuestions = interruptData.clarifying_questions || null;
+    const threadId = classification.thread_id || this.currentThreadId;
+    
+    // Don't show the card if no options are available
+    if (!options || options.length === 0) {
+      console.log('⚠️ No decision options available - skipping display');
+      UIComponents.addChatMessage('ℹ️', 'No human decisions required at this time.');
+      return;
+    }
+    
+    // Create a simple human decision card based on your backend data
+    const decisionCard = `
+      <div style="
+        background: linear-gradient(135deg, rgba(255,193,7,0.1) 0%, rgba(255,193,7,0.05) 100%);
+        border: 1px solid rgba(255,193,7,0.3);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 8px 0;
+      ">
+        <div style="
+          color: #ffc107;
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 16px;
+        ">
+          🛑 Human Approval Required
+        </div>
+        
+        <div style="
+          background: rgba(0,0,0,0.2);
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 16px;
+          border-left: 3px solid #ffc107;
+        ">
+          <div style="margin-bottom: 8px;">
+            <strong>AI Recommendation:</strong> ${finalClassification.toUpperCase()}
+            <span style="color: #adb5bd; margin-left: 8px;">(${Math.round(finalConfidence * 100)}% confidence)</span>
+          </div>
+          
+          <div style="color: #e9ecef; font-style: italic;">
+            "${finalReasoning}"
+          </div>
+        </div>
+        
+        ${proposedResponse ? `
+          <div style="
+            background: rgba(40, 167, 69, 0.1);
+            border: 1px solid rgba(40, 167, 69, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border-left: 3px solid #28a745;
+          ">
+            <div style="margin-bottom: 8px;">
+              <strong style="color: #28a745;">Proposed Response:</strong>
+            </div>
+            
+            <div style="
+              color: #e9ecef; 
+              line-height: 1.6; 
+              white-space: pre-line;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background: rgba(0, 0, 0, 0.2);
+              padding: 12px;
+              border-radius: 6px;
+              border: 1px solid rgba(255, 255, 255, 0.1);
+            " data-proposed-response="true">${this.escapeHtml(proposedResponse)}</div>
+          </div>
+        ` : ''}
+        
+        ${clarifyingQuestions && clarifyingQuestions.length > 0 ? `
+          <div style="
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border-left: 3px solid #ffc107;
+          ">
+            <div style="margin-bottom: 8px;">
+              <strong style="color: #ffc107;">🤔 Clarifying Questions:</strong>
+            </div>
+            
+            <div style="color: #e9ecef; line-height: 1.5;">
+              ${clarifyingQuestions.map((question: string, index: number) => 
+                `<div style="margin-bottom: 8px;"><strong>${index + 1}.</strong> ${this.escapeHtml(question)}</div>`
+              ).join('')}
+            </div>
+          </div>
+        ` : ''}
+        
+        <div style="color: #e9ecef; font-size: 13px; margin-bottom: 12px;">
+          Choose your action:
+        </div>
+        
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          ${options.map((option: string) => {
+            const buttonConfig = this.getHumanDecisionButtonConfig(option);
+            return `
+              <button 
+                data-thread-id="${threadId}"
+                onclick="emailAssistant.makeHumanDecision('${threadId}', '${option}')" 
+                style="
+                  background: ${buttonConfig.background};
+                  color: ${buttonConfig.color};
+                  border: ${buttonConfig.border};
+                  padding: 8px 16px;
+                  border-radius: 20px;
+                  font-size: 12px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  margin-bottom: 4px;
+                  transition: all 0.3s ease;
+                "
+              >${buttonConfig.label}</button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+    
+    UIComponents.addChatMessage('', decisionCard);
+  }
+
+  private getHumanDecisionButtonConfig(option: string) {
+    const configs: { [key: string]: any } = {
+      // IGNORE classification decisions
+      'approve_ignore': { label: '✅ Approve Ignore', background: '#28a745', color: 'white', border: 'none' },
+      'process_instead': { label: '🔄 Process Instead', background: 'transparent', color: '#17a2b8', border: '1px solid #17a2b8' },
+      
+      // AUTO-REPLY classification decisions (including after provide_answers routing)
+      'approve_send': { label: '✅ Approve & Send', background: '#28a745', color: 'white', border: 'none' },
+      'edit_and_send': { label: '✏️ Edit & Save', background: 'transparent', color: '#ffc107', border: '1px solid #ffc107' },
+      'approve_auto_reply': { label: '✅ Approve Auto-Reply', background: '#28a745', color: 'white', border: 'none' },
+      
+      // INFORMATION-NEEDED classification decisions (with clarifying questions)
+      'provide_answers': { label: '💬 Provide Answers', background: '#28a745', color: 'white', border: 'none' },
+      'convert_to_auto_reply': { label: '🤖 Convert to Auto-Reply', background: 'transparent', color: '#17a2b8', border: '1px solid #17a2b8' },
+      'convert_to_ignore': { label: '🗑️ Convert to Ignore', background: 'transparent', color: '#6c757d', border: '1px solid #6c757d' }
+    };
+    
+    return configs[option] || { 
+      label: option.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), 
+      background: 'transparent', 
+      color: '#ffffff', 
+      border: '1px solid #ffffff' 
+    };
+  }
+
+  public async makeHumanDecision(threadId: string, decision: string): Promise<void> {
+    try {
+      // Handle decisions that require custom input
+      let finalDecision = decision;
+      
+      if (decision === 'edit_and_send') {
+        // Show inline editor to modify the auto-response
+        await this.showEditAutoResponseInterface(threadId);
+        return;
+      } else if (decision === 'provide_answers') {
+        // Show interface to answer clarifying questions
+        await this.showAnswerQuestionsInterface(threadId);
+        return;
+      } else if (decision === 'custom_reply') {
+        const customText = prompt('Enter your custom reply text:');
+        if (customText) {
+          finalDecision = `custom_reply:${customText}`;
+        } else {
+          // User cancelled, don't proceed
+          return;
+        }
+      }
+      
+      // Handle special case for approve_send - open Outlook compose window
+      if (decision === 'approve_send') {
+        await this.openOutlookComposeWindow(threadId);
+      }
+      
+      // Disable all decision buttons immediately
+      this.disableDecisionButtons(threadId);
+      
+      UIComponents.showTypingIndicator();
+      
+      console.log('Making human decision:', finalDecision, 'for thread:', threadId);
+      
+      // Call the resume endpoint
+      const result = await apiClient.resumeWorkflow(threadId, finalDecision);
+      
+      UIComponents.hideTypingIndicator();
+      
+      // Show success message
+      UIComponents.addChatMessage('✅', `**Decision processed:** ${finalDecision.split(':')[0].replace(/_/g, ' ')}`);
+      
+    // Check final workflow status instead of re-calling process-email
+    await this.checkWorkflowStatus(threadId);
+      
+    } catch (error) {
+      console.error('Error making human decision:', error);
+      UIComponents.hideTypingIndicator();
+      UIComponents.addChatMessage('❌', 'Sorry, there was an error processing your decision. Please try again.');
+      
+      // Re-enable buttons on error
+      this.enableDecisionButtons(threadId);
+    }
+  }
+
+  private async openOutlookComposeWindow(threadId: string): Promise<void> {
+    try {
+      // Get the auto-reply text from the current decision interface
+      const autoReplyText = this.extractAutoReplyFromCurrentView();
+      
+      console.log('🔍 Extracted auto-reply text:', autoReplyText);
+      
+      if (!this.currentEmailContext) {
+        console.warn('❌ No current email context available for compose window');
+        UIComponents.addChatMessage('❌', 'No email context available. Please select an email first.');
+        return;
+      }
+      
+      if (!this.currentEmailContext.sender) {
+        console.warn('❌ No sender information in current email context');
+        UIComponents.addChatMessage('❌', 'No sender information available for compose window.');
+        return;
+      }
+      
+      // Create a new compose window with pre-filled content
+      // Note: Office.js displayNewMessageForm expects specific format
+      let senderEmail = this.currentEmailContext.sender || '';
+      
+      // Try to get sender from Office.js directly as fallback
+      if (!senderEmail) {
+        try {
+          const item = Office.context.mailbox.item;
+          if (item && 'from' in item && item.from) {
+            senderEmail = item.from.emailAddress || '';
+            console.log('🔄 Got sender from Office.js directly:', senderEmail);
+          }
+        } catch (error) {
+          console.error('Error getting sender from Office.js:', error);
+        }
+      }
+      
+      if (!senderEmail) {
+        console.error('❌ Still no sender email available');
+        UIComponents.addChatMessage('❌', 'Could not determine sender email address.');
+        return;
+      }
+      
+      const composeOptions = {
+        toRecipients: [senderEmail],
+        subject: `Re: ${this.currentEmailContext.subject || ''}`,
+        htmlBody: `<p>${autoReplyText.replace(/\n/g, '</p><p>')}</p>`
+      };
+      
+      // Also try alternative formats if the first doesn't work
+      const alternativeOptions = {
+        to: [senderEmail],
+        subject: `Re: ${this.currentEmailContext.subject || ''}`,
+        body: autoReplyText
+      };
+      
+      console.log('📧 Opening Outlook compose window with options:', composeOptions);
+      console.log('📧 Alternative options:', alternativeOptions);
+      console.log('📧 Current email context:', this.currentEmailContext);
+      console.log('📧 Sender email:', senderEmail);
+      
+      try {
+        // Try the primary format first
+        Office.context.mailbox.displayNewMessageForm(composeOptions);
+      } catch (primaryError) {
+        console.warn('Primary format failed, trying alternative:', primaryError);
+        try {
+          // Try alternative format
+          Office.context.mailbox.displayNewMessageForm(alternativeOptions);
+        } catch (alternativeError) {
+          console.error('Both formats failed:', alternativeError);
+          // Try minimal format
+          Office.context.mailbox.displayNewMessageForm({
+            toRecipients: [senderEmail]
+          });
+        }
+      }
+      
+      // Show confirmation message with the text that was extracted
+      UIComponents.addChatMessage('📧', `**Outlook compose window opened** with auto-reply text for: ${this.currentEmailContext.sender}`);
+      UIComponents.addChatMessage('📝', `**Text copied:** "${autoReplyText}"`);
+      
+    } catch (error) {
+      console.error('Error opening Outlook compose window:', error);
+      UIComponents.addChatMessage('❌', 'Could not open Outlook compose window. You can copy the text manually.');
+    }
+  }
+
+  private extractAutoReplyFromCurrentView(): string {
+    console.log('🔍 Extracting auto-reply text from current view...');
+    
+    // Method 1: Look for elements with the proposed-response data attribute (most reliable)
+    const proposedResponseElement = document.querySelector('[data-proposed-response="true"]');
+    if (proposedResponseElement) {
+      const text = proposedResponseElement.textContent || '';
+      if (text.trim()) {
+        console.log('✅ Extracted from data attribute:', text);
+        return text.trim();
+      }
+    }
+    
+    // Method 2: Use stored data - access the interrupt data directly (most reliable fallback)
+    if (this.lastClassificationData && this.lastClassificationData.interrupt_data) {
+      const proposedResponse = this.lastClassificationData.interrupt_data.proposed_auto_reply || 
+                              this.lastClassificationData.interrupt_data.auto_response ||
+                              this.lastClassificationData.auto_response;
+      if (proposedResponse) {
+        console.log('✅ Extracted from stored data:', proposedResponse);
+        return proposedResponse;
+      }
+    }
+    
+    console.log('⚠️ Using fallback text');
+    // Fallback: provide a helpful placeholder
+    return 'Thank you for your email. I will review this and get back to you soon.';
+  }
+
+  private async showEditAutoResponseInterface(threadId: string): Promise<void> {
+    // Get the current auto-reply text
+    const currentAutoReply = this.extractAutoReplyFromCurrentView();
+    
+    // Create inline editor for the auto-response
+    const editorCard = `
+      <div style="
+        background: linear-gradient(135deg, rgba(100, 150, 200, 0.15) 0%, rgba(100, 150, 200, 0.08) 100%);
+        border: 1px solid rgba(100, 150, 200, 0.3);
+        border-radius: 8px;
+        padding: 20px;
+        margin: 8px 0;
+      ">
+        <div style="color: #6db4d4; font-weight: 600; margin-bottom: 16px; font-size: 16px;">
+          ✏️ Edit Auto-Response
+        </div>
+        <div style="margin-bottom: 8px;">
+          <strong style="color: #ffffff; font-size: 14px;">Subject:</strong> 
+          <span style="color: #adb5bd; font-size: 14px;">Re: ${this.currentEmailContext?.subject || 'Email'}</span>
+        </div>
+        <textarea 
+          id="edit-auto-response-${threadId}" 
+          placeholder="Edit your auto-response text..."
+          style="
+            width: 100%;
+            height: 150px;
+            background: #2c3e50;
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            color: #ffffff;
+            padding: 16px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            resize: vertical;
+            box-sizing: border-box;
+          "
+        >${this.escapeHtml(currentAutoReply)}</textarea>
+        <div style="display: flex; gap: 12px; margin-top: 16px; justify-content: center;">
+          <button 
+            onclick="emailAssistant.saveEditedAutoResponse('${threadId}')"
+            style="
+              background: #17a2b8;
+              border: none;
+              color: white;
+              padding: 12px 24px;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+              min-width: 120px;
+            "
+          >💾 Save Changes</button>
+          <button 
+            onclick="emailAssistant.cancelEditAutoResponse('${threadId}')"
+            style="
+              background: #6c757d;
+              border: none;
+              color: white;
+              padding: 12px 24px;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+              min-width: 120px;
+            "
+          >❌ Cancel</button>
+        </div>
+      </div>
+    `;
+    
+    // Add the editor to the chat
+    UIComponents.addChatMessage('', editorCard);
+    
+    // Focus and select the text
+    setTimeout(() => {
+      const textarea = document.getElementById(`edit-auto-response-${threadId}`) as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
+        textarea.select();
+      }
+    }, 100);
+  }
+
+  public async saveEditedAutoResponse(threadId: string): Promise<void> {
+    const textarea = document.getElementById(`edit-auto-response-${threadId}`) as HTMLTextAreaElement;
+    const editedText = textarea?.value?.trim();
+    
+    if (!editedText) {
+      UIComponents.addChatMessage('⚠️', 'Please enter some text before saving.');
+      return;
+    }
+    
+    // Remove the editor card
+    const editorCard = textarea?.closest('[style*="linear-gradient(135deg, rgba(100, 150, 200"]');
+    if (editorCard) {
+      editorCard.remove();
+    }
+    
+    // Update the stored auto-response in the classification data
+    if (this.lastClassificationData && this.lastClassificationData.interrupt_data) {
+      this.lastClassificationData.interrupt_data.proposed_auto_reply = editedText;
+      this.lastClassificationData.interrupt_data.auto_response = editedText;
+    }
+    
+    // Show confirmation and update the display
+    UIComponents.addChatMessage('✅', `**Auto-response updated:** Changes saved successfully.`);
+    UIComponents.addChatMessage('📝', `**New response:** "${editedText}"`);
+    
+    // Update the displayed decision interface with the new text
+    this.updateProposedResponseDisplay(editedText);
+    
+    // Show a message that they can now use "Approve & Send"
+    UIComponents.addChatMessage('💡', 'You can now click **"Approve & Send"** to open Outlook with your edited response.');
+  }
+
+  public cancelEditAutoResponse(threadId: string): void {
+    // Remove the editor card
+    const textarea = document.getElementById(`edit-auto-response-${threadId}`) as HTMLTextAreaElement;
+    const editorCard = textarea?.closest('[style*="linear-gradient(135deg, rgba(100, 150, 200"]');
+    if (editorCard) {
+      editorCard.remove();
+    }
+    
+    UIComponents.addChatMessage('❌', 'Edit cancelled. Auto-response unchanged.');
+  }
+
+  private updateProposedResponseDisplay(newText: string): void {
+    // Find and update the proposed response using the data attribute
+    const proposedResponseElement = document.querySelector('[data-proposed-response="true"]');
+    if (proposedResponseElement) {
+      proposedResponseElement.textContent = newText;
+      console.log('✅ Updated proposed response display with new text');
+    } else {
+      console.warn('⚠️ Could not find proposed response element to update');
+    }
+  }
+
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  private async showAnswerQuestionsInterface(threadId: string): Promise<void> {
+    // Get the clarifying questions from the current display
+    const clarifyingQuestions = this.extractClarifyingQuestionsFromCurrentView();
+    
+    if (!clarifyingQuestions || clarifyingQuestions.length === 0) {
+      UIComponents.addChatMessage('❌', 'No clarifying questions found to answer.');
+      return;
+    }
+    
+    // Create interface to answer the questions
+    const answerCard = `
+      <div style="
+        background: linear-gradient(135deg, rgba(100, 150, 200, 0.15) 0%, rgba(100, 150, 200, 0.08) 100%);
+        border: 1px solid rgba(100, 150, 200, 0.3);
+        border-radius: 8px;
+        padding: 20px;
+        margin: 8px 0;
+      ">
+        <div style="color: #6db4d4; font-weight: 600; margin-bottom: 16px; font-size: 16px;">
+          💬 Answer Clarifying Questions
+        </div>
+        
+        <div style="margin-bottom: 16px; color: #e9ecef;">
+          Please provide answers to help generate a proper response:
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+          ${clarifyingQuestions.map((question: string, index: number) => 
+            `<div style="margin-bottom: 8px; color: #ffc107; font-weight: 600;">${index + 1}. ${this.escapeHtml(question)}</div>`
+          ).join('')}
+        </div>
+        
+        <textarea 
+          id="answer-questions-${threadId}" 
+          placeholder="Please provide your answers to the questions above..."
+          style="
+            width: 100%;
+            height: 150px;
+            background: #2c3e50;
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            color: #ffffff;
+            padding: 16px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            resize: vertical;
+            box-sizing: border-box;
+          "
+        ></textarea>
+        
+        <div style="display: flex; gap: 12px; margin-top: 16px; justify-content: center;">
+          <button 
+            onclick="emailAssistant.submitAnswers('${threadId}')"
+            style="
+              background: #28a745;
+              border: none;
+              color: white;
+              padding: 12px 24px;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+              min-width: 120px;
+            "
+          >✅ Submit Answers</button>
+          <button 
+            onclick="emailAssistant.cancelAnswerQuestions('${threadId}')"
+            style="
+              background: #6c757d;
+              border: none;
+              color: white;
+              padding: 12px 24px;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 14px;
+              font-weight: 600;
+              min-width: 120px;
+            "
+          >❌ Cancel</button>
+        </div>
+      </div>
+    `;
+    
+    // Add the answer interface to the chat
+    UIComponents.addChatMessage('', answerCard);
+    
+    // Focus the textarea
+    setTimeout(() => {
+      const textarea = document.getElementById(`answer-questions-${threadId}`) as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
+      }
+    }, 100);
+  }
+
+  private extractClarifyingQuestionsFromCurrentView(): string[] {
+    // Look for the clarifying questions in the current interface
+    const questionCards = document.querySelectorAll('[style*="rgba(255, 193, 7, 0.1)"]');
+    
+    for (let i = 0; i < questionCards.length; i++) {
+      const card = questionCards[i];
+      const cardText = card.textContent || '';
+      
+      if (cardText.includes('Clarifying Questions:')) {
+        // Extract questions from the stored classification data if available
+        if (this.lastClassificationData && this.lastClassificationData.interrupt_data && this.lastClassificationData.interrupt_data.clarifying_questions) {
+          return this.lastClassificationData.interrupt_data.clarifying_questions;
+        }
+      }
+    }
+    
+    return [];
+  }
+
+  public async submitAnswers(threadId: string): Promise<void> {
+    const textarea = document.getElementById(`answer-questions-${threadId}`) as HTMLTextAreaElement;
+    const answers = textarea?.value?.trim();
+    
+    if (!answers) {
+      UIComponents.addChatMessage('⚠️', 'Please provide answers before submitting.');
+      return;
+    }
+    
+    // Remove the answer interface
+    const answerCard = textarea?.closest('[style*="linear-gradient(135deg, rgba(100, 150, 200"]');
+    if (answerCard) {
+      answerCard.remove();
+    }
+    
+    // Show what the user provided
+    UIComponents.addChatMessage('💬', `**Answers provided:** ${answers}`);
+    
+    // Create the decision with answers
+    const finalDecision = `provide_answers:${answers}`;
+    
+    // Disable all decision buttons immediately
+    this.disableDecisionButtons(threadId);
+    
+    UIComponents.showTypingIndicator();
+    
+    console.log('Submitting answers:', finalDecision, 'for thread:', threadId);
+    
+    try {
+      // Call the resume endpoint
+      const result = await apiClient.resumeWorkflow(threadId, finalDecision);
+      
+      UIComponents.hideTypingIndicator();
+      
+      // Show success message
+      UIComponents.addChatMessage('✅', 'Answers submitted successfully! AI is generating response...');
+      
+      // Check workflow status - expect another interrupt for human approval of generated response
+      if (result.interrupted && result.interrupt_data && result.interrupt_data.options) {
+        console.log('🛑 Workflow routed to auto-reply for response approval');
+        UIComponents.addChatMessage('🤖', '**AI has generated a response based on your answers. Please review and approve:**');
+        this.displayHumanDecisionInterface(result);
+      } else {
+        // Check final workflow status if no immediate interrupt
+        await this.checkWorkflowStatus(threadId);
+      }
+      
+    } catch (error) {
+      console.error('Error submitting answers:', error);
+      UIComponents.hideTypingIndicator();
+      UIComponents.addChatMessage('❌', 'Sorry, there was an error submitting your answers. Please try again.');
+      
+      // Re-enable buttons on error
+      this.enableDecisionButtons(threadId);
+    }
+  }
+
+  public cancelAnswerQuestions(threadId: string): void {
+    // Remove the answer interface
+    const textarea = document.getElementById(`answer-questions-${threadId}`) as HTMLTextAreaElement;
+    const answerCard = textarea?.closest('[style*="linear-gradient(135deg, rgba(100, 150, 200"]');
+    if (answerCard) {
+      answerCard.remove();
+    }
+    
+    UIComponents.addChatMessage('❌', 'Answer submission cancelled.');
+  }
+
+  private async checkWorkflowStatus(threadId: string): Promise<void> {
+    try {
+      console.log('🔍 Checking workflow status for thread:', threadId);
+      
+      const status = await apiClient.getWorkflowStatus(threadId);
+      console.log('📊 Status response:', status);
+      
+      if (status.interrupted && status.interrupt_data && status.interrupt_data.options && status.interrupt_data.options.length > 0) {
+        console.log('🛑 Workflow still interrupted - showing new decision interface');
+        this.displayHumanDecisionInterface(status);
+      } else {
+        console.log('✅ Workflow completed with final classification:', status.classification);
+        
+        // Display the final classification result properly
+        if (status.classification) {
+          this.displayClassificationInChat(status);
+          
+          // If this was a "process_instead" that became auto-reply, show the auto-response
+          if (status.auto_response) {
+            UIComponents.addChatMessage('🤖', `**Generated response:** ${status.auto_response}`);
+          }
+        } else {
+          UIComponents.addChatMessage('✅', 'Decision processed successfully!');
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error checking workflow status:', error);
+      UIComponents.addChatMessage('ℹ️', 'Decision processed. Workflow status could not be verified.');
+    }
+  }
+
+  private disableDecisionButtons(threadId: string): void {
+    // Find all buttons for this thread and disable them
+    const buttons = document.querySelectorAll(`button[data-thread-id="${threadId}"]`);
+    buttons.forEach((button) => {
+      const btnElement = button as HTMLButtonElement;
+      btnElement.disabled = true;
+      btnElement.style.opacity = '0.5';
+      btnElement.style.cursor = 'not-allowed';
+      btnElement.style.filter = 'grayscale(100%)';
+    });
+  }
+
+  private enableDecisionButtons(threadId: string): void {
+    // Find all buttons for this thread and re-enable them
+    const buttons = document.querySelectorAll(`button[data-thread-id="${threadId}"]`);
+    buttons.forEach((button) => {
+      const btnElement = button as HTMLButtonElement;
+      btnElement.disabled = false;
+      btnElement.style.opacity = '1';
+      btnElement.style.cursor = 'pointer';
+      btnElement.style.filter = 'none';
+    });
+  }
+
+  private displayClassificationInChat(classification: any): void {
+    const icon = classification.classification === 'ignore' ? '🗑️' : 
+                 classification.classification === 'auto-reply' ? '🤖' : '👤';
+    const confidencePercent = Math.round(classification.confidence * 100);
+    
+    // Create a compact, styled classification display similar to the screenshot
+    const classificationCard = this.createClassificationCard(classification, confidencePercent);
+    
+    UIComponents.addChatMessage(icon, classificationCard);
+
+    // For auto-reply emails, show suggested response in a compact format
+    if (classification.classification === 'auto-reply' && classification.auto_response) {
+      this.addCompactAutoReplyCard(classification.auto_response);
+    }
+  }
+
+  private createClassificationCard(classification: any, confidencePercent: number): string {
+    const classType = classification.classification.toUpperCase();
+    const badgeColor = classification.classification === 'ignore' ? '#6c757d' : 
+                      classification.classification === 'auto-reply' ? '#28a745' : '#ffc107';
+    
+    // Performance indicator
+    let performanceIndicator = '';
+    if (classification.processing_time_ms !== undefined) {
+      const isCache = classification.processing_time_ms < 100;
+      performanceIndicator = isCache ? 
+        `<span style="color: #28a745; font-size: 12px;">⚡ ${classification.processing_time_ms}ms</span>` :
+        `<span style="color: #17a2b8; font-size: 12px;">🔄 ${classification.processing_time_ms}ms</span>`;
+    }
+
+    return `
+      <div style="
+        background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 8px 0;
+        backdrop-filter: blur(10px);
+      ">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <span style="
+            background: ${badgeColor};
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+          ">${classType}</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="color: #adb5bd; font-size: 12px;">${confidencePercent}% confidence</span>
+            ${performanceIndicator}
+          </div>
+        </div>
+        ${classification.reasoning ? `
+          <div style="
+            color: #e9ecef;
+            font-size: 14px;
+            line-height: 1.4;
+            font-style: italic;
+          ">"${classification.reasoning}"</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  private addCompactAutoReplyCard(autoResponse: string): void {
+    const autoReplyCard = `
+      <div style="
+        background: linear-gradient(135deg, rgba(40,167,69,0.1) 0%, rgba(40,167,69,0.05) 100%);
+        border: 1px solid rgba(40,167,69,0.3);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 8px 0;
+        position: relative;
+      ">
+        <div style="
+          color: #28a745;
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 12px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        ">
+          📧 Suggested Response
+        </div>
+        <div style="
+          background: rgba(0,0,0,0.3);
+          border-radius: 8px;
+          padding: 12px;
+          margin-bottom: 16px;
+          border-left: 3px solid #28a745;
+        ">
+          <div style="
+            color: #ffffff;
+            font-size: 14px;
+            line-height: 1.5;
+          ">${autoResponse}</div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="emailAssistant.sendAutoReply('${autoResponse.replace(/'/g, "\\'")}')" style="
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">✅ Accept</button>
+          <button onclick="emailAssistant.editAutoReply('${autoResponse.replace(/'/g, "\\'")}')" style="
+            background: transparent;
+            color: #ffc107;
+            border: 1px solid #ffc107;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">✏️ Edit</button>
+          <button onclick="emailAssistant.denyAutoReply()" style="
+            background: transparent;
+            color: #dc3545;
+            border: 1px solid #dc3545;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">❌ Deny</button>
+        </div>
+      </div>
+    `;
+    
+    UIComponents.addChatMessage('', autoReplyCard);
+  }
+
+  private addAutoReplyActions(autoResponse: string): void {
+    const actionButtons = `
+      <div class="chat-action-buttons" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn btn-success btn-small" onclick="emailAssistant.sendAutoReply('${autoResponse.replace(/'/g, "\\'")}')">
+          ✅ Send Reply
+        </button>
+        <button class="btn btn-warning btn-small" onclick="emailAssistant.editAutoReply('${autoResponse.replace(/'/g, "\\'")}')">
+          ✏️ Edit Reply
+        </button>
+      </div>
+    `;
+    
+    UIComponents.addChatMessage('', actionButtons);
+  }
+
+  private async displayGuidanceInChat(): Promise<void> {
+    try {
+      // Show typing indicator for guidance
+      UIComponents.showTypingIndicator();
+      
+      // Get guidance from the backend
+      const guidance = await this.getEmailGuidanceText();
+      
+      UIComponents.hideTypingIndicator();
+      
+      if (guidance) {
+        // Display guidance as a compact card with inline notes area
+        this.addGuidanceCard(guidance);
+      }
+    } catch (error) {
+      console.error('Error getting guidance:', error);
+      UIComponents.hideTypingIndicator();
+      UIComponents.addChatMessage('❌', 'Sorry, I couldn\'t retrieve specific guidance for this email.');
+    }
+  }
+
+  private addGuidanceCard(guidance: string): void {
+    const formattedGuidance = UIComponents.formatGuidanceText(guidance);
+    
+    const guidanceCard = `
+      <div style="
+        background: linear-gradient(135deg, rgba(255,193,7,0.1) 0%, rgba(255,193,7,0.05) 100%);
+        border: 1px solid rgba(255,193,7,0.3);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 8px 0;
+        backdrop-filter: blur(10px);
+      ">
+        <div style="
+          color: #ffc107;
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 16px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        ">
+          💡 Specific Guidance Needed
+        </div>
+        
+        <div style="
+          background: rgba(0,0,0,0.2);
+          border-radius: 8px;
+          padding: 16px;
+          margin-bottom: 16px;
+          border-left: 3px solid #ffc107;
+        ">
+          <div style="
+            color: #ffffff;
+            font-size: 14px;
+            line-height: 1.5;
+          ">${formattedGuidance}</div>
+        </div>
+        
+        <div style="
+          color: #e9ecef;
+          font-size: 13px;
+          margin-bottom: 12px;
+        ">Please review the guidance above and provide your notes:</div>
+        
+        <textarea 
+          id="guidance-notes-input" 
+          placeholder="Add your notes, answers to the questions, or any relevant information..."
+          style="
+            width: 100%;
+            min-height: 80px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #ffffff;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.5;
+            resize: vertical;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+          "
+           rows="3"
+         ></textarea>
+        
+        <div id="guidance-buttons" style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="emailAssistant.editGuidanceNotes()" style="
+            background: #ffc107;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">✏️ Edit</button>
+          <button onclick="emailAssistant.draftReplyWithNotes()" style="
+            background: transparent;
+            color: #17a2b8;
+            border: 1px solid #17a2b8;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">✏️ Draft Reply</button>
+        </div>
+      </div>
+    `;
+    
+    UIComponents.addChatMessage('', guidanceCard);
+  }
+
+  private addGuidanceNotesSection(): void {
+    const notesSection = `
+      <div style="
+        background: linear-gradient(135deg, rgba(255,193,7,0.1) 0%, rgba(255,193,7,0.05) 100%);
+        border: 1px solid rgba(255,193,7,0.3);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 8px 0;
+        backdrop-filter: blur(10px);
+      ">
+        <div style="
+          color: #ffc107;
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 12px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        ">
+          📝 Your Notes & Answers
+        </div>
+        <textarea 
+          id="guidance-notes-input" 
+          placeholder="Add your notes, answers to the questions, or any relevant information..."
+          style="
+            width: 100%;
+            min-height: 100px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #ffffff;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.5;
+            resize: vertical;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+          "
+          rows="4"
+        ></textarea>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="emailAssistant.submitGuidanceNotes()" style="
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">💾 Save Notes</button>
+          <button onclick="emailAssistant.draftReplyWithNotes()" style="
+            background: transparent;
+            color: #17a2b8;
+            border: 1px solid #17a2b8;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">✏️ Draft Reply</button>
+        </div>
+      </div>
+    `;
+    
+    UIComponents.addChatMessage('', notesSection);
+  }
+
+  private async getEmailGuidanceText(): Promise<string | null> {
+    if (!this.currentEmailContext) return null;
+    
+    try {
+      const guidanceRequest: ChatRequest = {
+        subject: this.currentEmailContext.subject || 'No Subject',
+        sender: this.currentEmailContext.sender || 'Unknown Sender',
+        body: this.currentEmailContext.body || 'No Content',
+        message: "What specific information or actions are needed for this email?"
+      };
+      
+      const guidanceResponse = await apiClient.getEmailGuidance(guidanceRequest);
+      
+      return guidanceResponse.response || null;
+    } catch (error) {
+      console.error('Error getting email guidance:', error);
+      return null;
+    }
+  }
+
+  // Public methods for button actions (called from HTML onclick)
+  public sendAutoReply(replyText: string): void {
+    UIComponents.addChatMessage('👤', 'Sending auto-reply...');
+    // Implementation for sending the reply would go here
+    UIComponents.addChatMessage('✅', 'Auto-reply sent successfully!');
+  }
+
+  public editAutoReply(replyText: string): void {
+    // Add the reply text to the chat input for editing
+    const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
+    if (chatInput) {
+      chatInput.value = `Please help me edit this reply:\n\n"${replyText}"`;
+      chatInput.focus();
+    }
+  }
+
+  public submitGuidanceNotes(): void {
+    const notesInput = document.getElementById('guidance-notes-input') as HTMLTextAreaElement;
+    if (notesInput && notesInput.value.trim()) {
+      const notes = notesInput.value.trim();
+      UIComponents.addChatMessage('📝', `**My Notes:**\n${notes}`);
+      UIComponents.addChatMessage('✅', 'Notes saved! You can now draft a reply or continue working with this email.');
+    } else {
+      UIComponents.addChatMessage('⚠️', 'Please add some notes before saving.');
+    }
+  }
+
+  public draftReplyWithNotes(): void {
+    const notesInput = document.getElementById('guidance-notes-input') as HTMLTextAreaElement;
+    const notes = notesInput ? notesInput.value.trim() : '';
+    
+    let draftMessage = 'Please help me draft a professional reply to this email.';
+    if (notes) {
+      draftMessage += ` Here are my notes and information I've gathered:\n\n${notes}`;
+    }
+    draftMessage += '\n\nPlease create a complete, professional email response.';
+    
+    // Add to chat input
+    const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
+    if (chatInput) {
+      chatInput.value = draftMessage;
+      chatInput.focus();
+    }
+  }
+
+  public denyAutoReply(): void {
+    UIComponents.addChatMessage('❌', 'Auto-reply suggestion denied. The email will remain unprocessed.');
+  }
+
+  public editGuidanceNotes(): void {
+    // Get current notes from the textarea
+    const notesInput = document.getElementById('guidance-notes-input') as HTMLTextAreaElement;
+    const currentNotes = notesInput ? notesInput.value : '';
+    
+    // Hide the textarea and show edit interface
+    if (notesInput) {
+      notesInput.style.display = 'none';
+    }
+    
+    // Replace buttons with edit interface
+    const buttonsContainer = document.getElementById('guidance-buttons');
+    if (buttonsContainer) {
+      buttonsContainer.innerHTML = `
+        <textarea 
+          id="edit-guidance-textarea" 
+          placeholder="Edit your notes here..."
+          style="
+            width: 100%;
+            min-height: 100px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #ffffff;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.5;
+            resize: vertical;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+          "
+          rows="4"
+        >${currentNotes}</textarea>
+        
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="emailAssistant.updateGuidanceNotes()" style="
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 120px;
+            justify-content: center;
+          ">✅ Update Reply</button>
+          <button onclick="emailAssistant.cancelEditGuidanceNotes()" style="
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 120px;
+            justify-content: center;
+          ">❌ Cancel</button>
+        </div>
+      `;
+    }
+  }
+
+  public updateGuidanceNotes(): void {
+    const editTextarea = document.getElementById('edit-guidance-textarea') as HTMLTextAreaElement;
+    const originalTextarea = document.getElementById('guidance-notes-input') as HTMLTextAreaElement;
+    
+    if (editTextarea && originalTextarea) {
+      // Update the original textarea with the edited content
+      originalTextarea.value = editTextarea.value;
+      
+      // Show success message
+      if (editTextarea.value.trim()) {
+        UIComponents.addChatMessage('📝', `**Notes Updated:**\n${editTextarea.value.trim()}`);
+        UIComponents.addChatMessage('✅', 'Your notes have been updated successfully!');
+      }
+      
+      // Restore the original interface
+      this.restoreGuidanceInterface();
+    }
+  }
+
+  public cancelEditGuidanceNotes(): void {
+    // Show cancellation message
+    UIComponents.addChatMessage('❌', 'Edit cancelled. No changes were saved.');
+    
+    // Restore the original interface
+    this.restoreGuidanceInterface();
+  }
+
+  private restoreGuidanceInterface(): void {
+    // Show the original textarea
+    const notesInput = document.getElementById('guidance-notes-input') as HTMLTextAreaElement;
+    if (notesInput) {
+      notesInput.style.display = 'block';
+    }
+    
+    // Restore original buttons
+    const buttonsContainer = document.getElementById('guidance-buttons');
+    if (buttonsContainer) {
+      buttonsContainer.innerHTML = `
+        <button onclick="emailAssistant.editGuidanceNotes()" style="
+          background: #ffc107;
+          color: #000;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        ">✏️ Edit</button>
+        <button onclick="emailAssistant.draftReplyWithNotes()" style="
+          background: transparent;
+          color: #17a2b8;
+          border: 1px solid #17a2b8;
+          padding: 8px 16px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        ">✏️ Draft Reply</button>
+      `;
     }
   }
 
@@ -1097,6 +2422,9 @@ Office.onReady((info) => {
       console.error('Failed to initialize Email Assistant:', error);
       globalAssistant = null; // Reset on error to allow retry
     });
+    
+    // Make the assistant globally accessible for onclick handlers
+    (window as any).emailAssistant = globalAssistant;
   } else {
     console.error('This add-in only works in Outlook');
   }

@@ -29,6 +29,19 @@ export interface EmailClassificationResponse {
   reply_sent: boolean;
   action_completed: boolean;
   context_enriched: boolean;
+  // Human-in-the-loop fields (based on your backend logs)
+  interrupted?: boolean;
+  thread_id?: string;
+  interrupt_data?: {
+    type?: string;
+    options?: string[];
+    classification?: string;
+    reasoning?: string;
+    confidence?: number;
+    [key: string]: any;
+  };
+  processing_time_ms?: number;
+  message?: string;
 }
 
 
@@ -130,9 +143,11 @@ export class AgentApiClient {
     }
   }
 
-  // Email classification functionality
+  // Email classification functionality - LangGraph compliant (only for NEW emails)
   async classifyEmail(request: EmailClassificationRequest): Promise<EmailClassificationResponse> {
     try {
+      console.log('🆕 Processing NEW email with LangGraph workflow:', request.message_id);
+      
       const response = await fetch(`${this.baseUrl}/api/process-email`, {
         method: 'POST',
         headers: {
@@ -148,9 +163,91 @@ export class AgentApiClient {
       }
 
       const result = await response.json();
+      console.log('📋 New email classification result:', result);
+      
+      // Store thread_id for future reference if email has message_id
+      if (result.thread_id && request.message_id) {
+        localStorage.setItem(`email_thread_${request.message_id}`, result.thread_id);
+        console.log(`💾 Stored thread_id ${result.thread_id} for email ${request.message_id}`);
+      }
+      
       return result;
     } catch (error) {
       console.error('Email classification failed:', error);
+      throw error;
+    }
+  }
+
+  // Resume workflow after human decision (based on your backend format)
+  async resumeWorkflow(threadId: string, humanDecision: string): Promise<any> {
+    try {
+      console.log('🔄 Resuming workflow for thread:', threadId, 'with decision:', humanDecision);
+      
+      const response = await fetch(`${this.baseUrl}/api/resume`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          thread_id: threadId,
+          human_decision: humanDecision
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Workflow resumed successfully:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('Error resuming workflow:', error);
+      throw error;
+    }
+  }
+
+  // Get workflow status without triggering re-execution (LangGraph best practices)
+  async getWorkflowStatus(messageIdOrThreadId: string): Promise<EmailClassificationResponse> {
+    try {
+      // Try to get thread_id from storage if this looks like a message_id
+      let threadId = messageIdOrThreadId;
+      
+      if (messageIdOrThreadId.includes('@') || messageIdOrThreadId.includes('<')) {
+        // This looks like a message_id, try to get the stored thread_id
+        const storedThreadId = localStorage.getItem(`email_thread_${messageIdOrThreadId}`);
+        if (storedThreadId) {
+          threadId = storedThreadId;
+          console.log(`🔍 Using stored thread_id ${threadId} for message ${messageIdOrThreadId}`);
+        } else {
+          console.log(`⚠️ No stored thread_id found for message ${messageIdOrThreadId}, using as thread_id`);
+        }
+      }
+      
+      console.log('🔍 Getting workflow status for thread:', threadId);
+      
+      const response = await fetch(`${this.baseUrl}/api/workflow/${threadId}/status`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('📊 Workflow status:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('Error getting workflow status:', error);
       throw error;
     }
   }

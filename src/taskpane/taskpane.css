@@ -1235,83 +1235,7 @@ body {
     box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2);
 }
 
-/* Email Classification Section */
-.classification-section {
-    background: rgba(0, 212, 255, 0.05);
-    border: 1px solid rgba(0, 212, 255, 0.2);
-    border-radius: 12px;
-    margin-bottom: 20px;
-}
 
-.classification-content {
-    margin-top: 12px;
-}
-
-.classification-result {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-    border-left: 4px solid;
-}
-
-.classification-result.ignore {
-    border-left-color: #6c757d;
-}
-
-.classification-result.auto-reply {
-    border-left-color: #28a745;
-}
-
-.classification-result.information-needed {
-    border-left-color: #ffc107;
-}
-
-.classification-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-
-.classification-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 12px;
-    border-radius: 16px;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.classification-badge.ignore {
-    background: rgba(108, 117, 125, 0.2);
-    color: #adb5bd;
-}
-
-.classification-badge.auto-reply {
-    background: rgba(40, 167, 69, 0.2);
-    color: #28a745;
-}
-
-.classification-badge.information-needed {
-    background: rgba(255, 193, 7, 0.2);
-    color: #ffc107;
-}
-
-.confidence-score {
-    font-size: 14px;
-    color: #adb5bd;
-    font-weight: 500;
-}
-
-.classification-reasoning {
-    color: #ffffff;
-    line-height: 1.5;
-    margin-bottom: 16px;
-    font-style: italic;
-}
 
 .auto-response-section {
     background: rgba(40, 167, 69, 0.1);
@@ -1537,57 +1461,12 @@ body {
     min-width: 100px;
 }
 
-.classification-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-    flex-wrap: wrap;
-}
-
-.classification-actions .btn {
-    flex: 1;
-    min-width: 120px;
-}
-
-.classification-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 40px;
-    color: #adb5bd;
-}
-
-.classification-loading .spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid rgba(0, 212, 255, 0.3);
-    border-top: 2px solid #00d4ff;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin-right: 12px;
-}
 
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
 
-/* Responsive Design for Classification */
-@media (max-width: 480px) {
-    .classification-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
-    }
-    
-    .classification-actions {
-        flex-direction: column;
-    }
-    
-    .classification-actions .btn {
-        min-width: auto;
-    }
-    
     .guidance-actions {
         flex-direction: column;
     }
