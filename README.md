@@ -1,13 +1,13 @@
 # JQuad AI Assistant - Outlook Add-in
 
-A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that provides an intelligent, conversational AI assistant for email management. Now enhanced with **LangChain @tool decorators** and **proper LangChain architecture** for robust email processing.
+A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that provides an intelligent, conversational AI assistant for email management.
 
 ## ✨ Features
 
 ### 🗣️ **Conversational Interface**
 - **Natural Chat Experience**: Type requests in plain English like "Write a proposal to decline this meeting"
 - **Streaming Responses**: Real-time, word-by-word AI responses
-- **Smart Suggestions**: Quick action buttons for common tasks including LangChain features
+- **Smart Suggestions**: Quick action buttons for common tasks (Extract Tasks, Write Reply, Summarize, Sentiment)
 - **Context Awareness**: AI understands email content and conversation history
 
 ### 🔧 **Smart Email Actions**
@@ -16,12 +16,11 @@ A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that prov
 - **Outlook Integration**: Seamlessly opens AI-generated emails in Outlook for editing
 - **Multiple Formats**: Handles various email types and languages
 
-### 🤖 **LangChain Agent Features**
-- **Exchange Integration**: Process new emails directly from Exchange servers
-- **Automatic Email Polling**: Background scheduler monitors for new emails (every 2 minutes)
-- **Tool Discovery**: View all available LangChain @tool decorated functions
-- **Real-time Progress**: Live progress bars for email processing operations
-- **Scheduler Control**: Start/stop automatic email monitoring from the UI
+### 🤖 **AI Agent Features**
+- **Email Classification**: Intelligent email categorization and processing
+- **Real-time Communication**: WebSocket integration for live AI responses
+- **Human-in-the-Loop**: Smart approval system for AI-generated content
+- **Context Awareness**: Maintains conversation history and email context
 
 ### 🤝 **Human-in-the-Loop Workflow**
 - **Smart Approval System**: Context-aware buttons that appear when AI needs feedback
@@ -33,39 +32,27 @@ A modern Outlook add-in developed by [JQuad](https://www.jquad.rocks/) that prov
 
 This is the **client-side** component of a separated architecture:
 
-- **Outlook Add-in** (this project): Enhanced UI client using TypeScript/Office.js with LangChain integration
-- **LangChain Email Agent** (separate project): Python FastAPI + LangChain @tool decorators + LangGraph backend
+- **Outlook Add-in** (this project): Enhanced UI client using TypeScript/Office.js
+- **AI Email Agent** (separate project): Python FastAPI backend with AI integration
 
-### 🏗️ **New LangChain Architecture**
+### 🏗️ **Simple Architecture**
 
-The backend now follows **proper LangChain patterns**:
+The system follows a clean client-server pattern:
 
 ```
-┌─── Microsoft Exchange ─────┐    ┌─── LLM ─────────────────────┐
-│  📧 Email 1                │    │  🧠 Claude/GPT              │
-│  📧 Email 2                │ ←──┤  📝 Classify & Reason       │
-│  📧 ...                    │    │  🎯 Auto-respond/Review     │
-└────────────────────────────┘    └─────────────────────────────┘
+┌─── Outlook Add-in ─────────┐    ┌─── AI Backend ─────────────┐
+│  🎯 Chat Interface         │    │  🧠 LLM Integration        │
+│  📧 Email Context          │ ←──┤  📝 Email Processing       │
+│  🤖 AI Conversations       │    │  💬 Chat API               │
+│  ✅ Human Approval         │    │  🔄 Real-time WebSocket    │
+└────────────────────────────┘    └────────────────────────────┘
            │                                    │
            ▼                                    ▼
-    ┌─── @tool ───────┐                ┌─── Agent ────┐
-    │ get_new_emails  │◄───────────────┤ 🤖 LangGraph │
-    │ send_reply      │                │ Workflow     │
-    │ mark_as_read    │                └──────────────┘
-    └─────────────────┘                        │
-                                               │
-    ┌─── @tool ───────┐                        │
-    │ process_content │◄───────────────────────┤
-    │ search_similar  │                        │
-    │ generate_embed  │                        │
-    └─────────────────┘                        │
-                │                              │
-                ▼                              ▼
-    ┌─── @tool ───────┐                ┌─── Database ───┐
-    │ store_email     │◄───────────────┤ 🗄️ Supabase    │
-    │ store_analysis  │                │ PGVector       │
-    │ get_history     │                │ Persistence    │
-    └─────────────────┘                └────────────────┘
+    ┌─── Office.js ────┐                ┌─── FastAPI ───┐
+    │ Email Reading     │                │ REST API      │
+    │ Reply Generation  │                │ WebSocket     │
+    │ Context Loading   │                │ AI Processing │
+    └───────────────────┘                └───────────────┘
 ```
 
 ## Prerequisites
@@ -112,21 +99,24 @@ npm run start
 ```
 src/
 ├── models/
-│   └── types.ts           # TypeScript interfaces
+│   └── types.ts              # TypeScript interfaces
 ├── taskpane/
-│   ├── taskpane.html      # Main UI template
-│   ├── taskpane.css       # Styles
-│   ├── taskpane.ts        # Main application logic
-│   ├── api-client.ts      # Agent service API client
-│   ├── websocket-client.ts # Real-time communication
-│   └── ui-components.ts   # UI helper functions
+│   ├── taskpane.html         # Main UI template
+│   ├── taskpane.css          # Styles
+│   ├── taskpane.ts           # Main application logic
+│   ├── api-client.ts         # Backend API client
+│   ├── websocket-client.ts   # Real-time communication
+│   └── ui-components.ts      # UI helper functions
+├── localization/
+│   ├── localization-manager.ts # Internationalization support
+│   └── strings.ts            # Localized text strings
 └── utils/
-    └── office-helpers.ts  # Office.js utilities
+    └── office-helpers.ts     # Office.js utilities
 ```
 
 ## Configuration
 
-The add-in connects to the agent service at `http://localhost:8000` by default. To change this:
+The add-in connects to the backend service at `http://localhost:8000` by default. To change this:
 
 1. Update the base URL in `src/taskpane/api-client.ts`
 2. Update the WebSocket URL in `src/taskpane/websocket-client.ts`
@@ -140,17 +130,15 @@ The add-in connects to the agent service at `http://localhost:8000` by default. 
    - *"Summarize this email"*
    - *"Extract the key tasks"*
    - *"What's the sentiment here?"*
-   - *"Check scheduler status"*
-   - *"Show available tools"*
+   - *"Write a professional reply"*
 3. **Get Instant Responses**: AI responds in real-time with relevant information
 
-### **LangChain Agent Features**
-Use the new feature buttons for advanced functionality:
-- **📧 Process New Emails** → Manually trigger Exchange email processing
-- **📊 Scheduler Status** → Check automatic email polling status
-- **⏰ Toggle Scheduler** → Start/stop background email monitoring
-- **🛠️ Show Tools** → View all available LangChain @tool functions
-- **📈 Show Progress** → Monitor real-time processing progress
+### **AI Assistant Features**
+Use the suggestion buttons for common tasks:
+- **✅ Extract Tasks** → Get bullet-pointed action items from emails
+- **📝 Write Reply** → Generate professional email responses  
+- **📄 Summarize** → Get concise email summaries
+- **😊 Sentiment** → Analyze email tone and sentiment
 
 ### **Email Composition Workflow**
 ```
@@ -183,8 +171,6 @@ Use the suggestion buttons for instant actions:
 - **📝 Write Reply** → Generate professional email responses  
 - **📄 Summarize** → Get concise email summaries
 - **😊 Sentiment** → Analyze email tone and sentiment
-- **⏰ Scheduler** → Check automatic email polling status
-- **🛠️ Tools** → View available LangChain tools
 
 ## 🎯 Human-in-the-Loop Workflow
 
@@ -222,21 +208,20 @@ Our approval system uses **inline chat buttons** that adapt to context:
 
 ## 💡 Advanced Features
 
-### **Ambient Agent Pattern**
-This add-in implements the ambient agent pattern inspired by [LangChain Academy](https://academy.langchain.com/courses/ambient-agents):
+### **Conversational AI Pattern**
+This add-in implements a natural conversational interface:
 - **Always-on Context**: AI maintains awareness of email content throughout the conversation
 - **Memory Persistence**: Conversation history is maintained across interactions
 - **Intent Detection**: AI automatically understands what you want to accomplish
 - **Streaming Responses**: Real-time feedback for improved user experience
 
-### **LangChain Integration**
-Enhanced with **proper LangChain @tool decorator patterns**:
-- **Tool Discovery**: UI automatically discovers and displays available @tool functions
-- **Progress Tracking**: Real-time progress bars for email processing operations  
-- **Scheduler Control**: Start/stop automatic email polling via API endpoints
-- **System Status**: Monitor Exchange, Database, and LLM connectivity
-- **Vector Search**: Integration with email embedding and similarity search
-- **WebSocket Communication**: Real-time updates via WebSocket connections
+### **Technical Integration**
+Built with modern web technologies:
+- **Office.js Integration**: Deep integration with Outlook for seamless email operations
+- **Real-time Communication**: WebSocket support for live AI responses
+- **TypeScript**: Type-safe development with comprehensive interfaces
+- **Responsive Design**: Works across desktop and web versions of Outlook
+- **Error Handling**: Graceful fallbacks and user-friendly error messages
 
 ## 🛠️ Development Tips
 
@@ -253,4 +238,4 @@ MIT License - see LICENSE file for details
 
 ## Related Projects
 
-- **Agent Service**: The Python FastAPI + LangGraph backend that powers this add-in
+- **AI Backend Service**: The Python FastAPI backend that powers this add-in
