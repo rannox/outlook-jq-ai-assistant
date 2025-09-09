@@ -44,7 +44,7 @@ export enum AgentAction {
 }
 
 export interface AgentStatus {
-  status: 'thinking' | 'waiting_for_human' | 'completed' | 'cancelled' | 'error';
+  status: 'thinking' | 'waiting_for_human' | 'completed' | 'cancelled' | 'error' | 'connecting' | 'disconnected';
   message?: string;
   data?: any;
   thread_id?: string;

@@ -13,11 +13,11 @@
         <!-- Header -->
         <div class="header">
             <div class="header-content">
-                <h2>🤖 JQuad AI Assistant</h2>
+                <h2 id="app-title">🤖 JQuad AI Assistant</h2>
                 <div class="header-status">
                     <span id="connection-status" title="Service connection status">🔴</span>
-                    <div id="status" class="status status-ready">
-                        <span id="status-text">Ready</span>
+                    <div id="status" class="status status-connecting">
+                        <span id="status-text">Starting...</span>
                     </div>
                 </div>
             </div>
@@ -25,24 +25,20 @@
 
         <!-- Email Context -->
         <div id="email-context" class="section" style="display: none;">
-            <h3>📧 Current Email</h3>
+            <h3 id="email-context-title">📧 Current Email</h3>
             <div class="email-info">
                 <div class="email-field">
-                    <strong>Subject:</strong> 
+                    <strong id="email-subject-label">Subject:</strong> 
                     <span id="email-subject" class="email-value">No subject</span>
                 </div>
                 <div class="email-field">
-                    <strong>From:</strong> 
+                    <strong id="email-from-label">From:</strong> 
                     <span id="email-from" class="email-value">Unknown sender</span>
                 </div>
                 <div class="email-field">
-                    <strong>To:</strong> 
+                    <strong id="email-to-label">To:</strong> 
                     <span id="email-to" class="email-value">Unknown recipient</span>
                 </div>
-            </div>
-            <div class="email-actions">
-                <button id="btn-refresh" class="btn btn-small">🔄 Refresh</button>
-                <button id="btn-test-connection" class="btn btn-small">🔗 Test Connection</button>
             </div>
         </div>
 
@@ -52,11 +48,11 @@
         <div class="ai-container">
             <!-- AI Chat Stream Section - Enhanced -->
             <div id="ai-chat-section" class="chat-section">
-                <h3>💬 Chat with AI Assistant</h3>
+                <h3 id="chat-title">💬 Chat with AI Assistant</h3>
                 <div id="chat-messages" class="chat-messages">
                     <div class="chat-message ai-message">
                         <span class="message-icon">🤖</span>
-                        <span class="message-text">Hi! I can help you with this email. Try asking me:<br/>
+                        <span id="welcome-message" class="message-text">Hi! I can help you with this email. Try asking me:<br/>
                         • "Extract the key tasks from this email"<br/>
                         • "Write a professional reply"<br/>
                         • "Summarize this email"<br/>
@@ -79,20 +75,20 @@
                         </button>
                     </div>
                     <div class="chat-suggestions">
-                        <button class="suggestion-btn" data-suggestion="Extract the key tasks from this email">✅ Extract Tasks</button>
-                        <button class="suggestion-btn" data-suggestion="Write a professional email reply to this email">📝 Write Reply</button>
-                        <button class="suggestion-btn" data-suggestion="Summarize this email">📄 Summarize</button>
-                        <button class="suggestion-btn" data-suggestion="What's the sentiment of this email?">😊 Sentiment</button>
-                        <button class="suggestion-btn" id="classify-email-suggestion" data-suggestion="classify-email">🤖 Classify Email</button>
+                        <button class="suggestion-btn" data-suggestion-key="extractTasks">✅ <span id="suggestion-extract-text">Extract Tasks</span></button>
+                        <button class="suggestion-btn" data-suggestion-key="writeReply">📝 <span id="suggestion-reply-text">Write Reply</span></button>
+                        <button class="suggestion-btn" data-suggestion-key="summarize">📄 <span id="suggestion-summarize-text">Summarize</span></button>
+                        <button class="suggestion-btn" data-suggestion-key="sentiment">😊 <span id="suggestion-sentiment-text">Sentiment</span></button>
+                        <button class="suggestion-btn" id="classify-email-suggestion" data-suggestion="classify-email">🤖 <span id="suggestion-classify-text">Classify Email</span></button>
                     </div>
                 </div>
                 
                 <div id="chat-approval-area" class="chat-approval" style="display: none;">
                     <div class="approval-buttons">
-                        <button id="chat-btn-accept" class="btn btn-success">✅ Accept</button>
-                        <button id="chat-btn-edit" class="btn btn-warning">✏️ Edit</button>
-                        <button id="chat-btn-respond" class="btn btn-info">💬 Respond</button>
-                        <button id="chat-btn-reject" class="btn btn-danger">❌ Reject</button>
+                        <button id="chat-btn-accept" class="btn btn-success">✅ <span id="chat-btn-accept-text">Accept</span></button>
+                        <button id="chat-btn-edit" class="btn btn-warning">✏️ <span id="chat-btn-edit-text">Edit</span></button>
+                        <button id="chat-btn-respond" class="btn btn-info">💬 <span id="chat-btn-respond-text">Respond</span></button>
+                        <button id="chat-btn-reject" class="btn btn-danger">❌ <span id="chat-btn-reject-text">Reject</span></button>
                     </div>
                 </div>
             </div>

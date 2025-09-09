@@ -16,6 +16,7 @@ import {
   EmailDraft, 
   MeetingRequest 
 } from '../models/types';
+import { localizationManager } from '../localization/localization-manager';
 
 // Removed WorkflowStateManager - no more caching, always fetch fresh data
 
@@ -39,9 +40,15 @@ class EmailAssistant {
     try {
       // Check if Office is ready
       if (!isOfficeReady()) {
-        UIComponents.showError('Office.js is not ready. Please refresh the page.');
+        UIComponents.showError(localizationManager.getString('errors.officeNotReady'));
         return;
       }
+
+      // Show connecting status
+      UIComponents.showStatus({ 
+        status: 'connecting', 
+        message: localizationManager.getString('status.connecting') 
+      });
 
       // Test agent service connectivity
       await this.testAgentConnection();
@@ -49,15 +56,22 @@ class EmailAssistant {
       // Load current email context
       await this.loadEmailContext();
       
-      // Initialize UI
+      // Initialize UI (localization already done)
       this.initializeUI();
       
-      UIComponents.showStatus({ status: 'completed', message: 'Ready' });
+      // Only show ready status if we successfully connected to the agent
+      UIComponents.showStatus({ status: 'completed', message: localizationManager.getString('status.ready') });
       console.log('Email Assistant initialized successfully');
       
     } catch (error) {
       console.error('Error initializing Email Assistant:', error);
-      UIComponents.showError('Failed to initialize. Please check agent service connection.');
+      UIComponents.showError(localizationManager.getString('errors.connectionFailed'));
+      
+      // Update status to show service disconnected
+      UIComponents.showStatus({ 
+        status: 'disconnected', 
+        message: localizationManager.getString('status.disconnected')
+      });
     }
   }
 
@@ -67,14 +81,15 @@ class EmailAssistant {
       UIComponents.setConnectionStatus(isHealthy);
       
       if (!isHealthy) {
-        throw new Error('Agent service health check failed');
+        throw new Error(localizationManager.getString('errors.agentServiceUnavailable'));
       }
       
       // Try to get system status for additional info, but don't fail if it doesn't exist
       try {
         const systemStatus = await apiClient.getSystemStatus();
         if (systemStatus) {
-          UIComponents.showSystemStatus(systemStatus);
+          // Log system status for debugging, but don't show in chat
+          console.log('System status:', systemStatus);
         }
       } catch (statusError) {
         console.log('System status endpoint not available:', statusError);
@@ -83,7 +98,7 @@ class EmailAssistant {
     } catch (error) {
       console.error('Agent service connection failed:', error);
       UIComponents.setConnectionStatus(false);
-      throw new Error('Cannot connect to agent service. Please ensure it is running on localhost:8000');
+      throw new Error(localizationManager.getString('errors.agentServiceUnavailable'));
     }
   }
 
@@ -96,14 +111,14 @@ class EmailAssistant {
       if (this.currentEmailContext) {
         this.updateEmailContextUI();
         console.log('Email context loaded:', this.currentEmailContext);
-        UIComponents.showSuccess('Email context loaded successfully');
+        UIComponents.showSuccess(localizationManager.getString('success.emailContextLoaded'));
       } else {
-        UIComponents.showError('No email context available. Please select an email.');
+        UIComponents.showError(localizationManager.getString('errors.noEmailContext'));
         UIComponents.hideEmailContext();
       }
     } catch (error) {
       console.error('Error loading email context:', error);
-      UIComponents.showError('Failed to load email context');
+      UIComponents.showError(localizationManager.getString('errors.failedToLoadEmail'));
       UIComponents.hideEmailContext();
     }
   }
@@ -118,15 +133,12 @@ class EmailAssistant {
     );
   }
 
+
   private initializeUI(): void {
     // Chat interface (primary interface)
     this.initializeChatInterface();
 
-    // Utility buttons
-    this.addEventListenerSafe('btn-refresh', 'click', 
-      () => this.loadEmailContext());
-    this.addEventListenerSafe('btn-test-connection', 'click', 
-      () => this.testAgentConnection());
+    // Utility buttons removed - email context loads automatically
 
     console.log('UI event listeners initialized');
   }
@@ -174,9 +186,36 @@ class EmailAssistant {
       
       console.log(`[DEBUG] Adding listener to suggestion button ${index}: ${newBtn.getAttribute('data-suggestion')}`);
       newBtn.addEventListener('click', () => {
-        console.log(`[DEBUG] Suggestion button clicked: ${newBtn.getAttribute('data-suggestion')}`);
-        const suggestion = newBtn.getAttribute('data-suggestion');
-        if (suggestion && chatInput) {
+        console.log(`[DEBUG] Suggestion button clicked: ${newBtn.getAttribute('data-suggestion-key')}`);
+        const suggestionKey = newBtn.getAttribute('data-suggestion-key');
+        const suggestion = newBtn.getAttribute('data-suggestion'); // For classify-email
+        
+        if (suggestionKey && chatInput) {
+          // Use localized prompt based on the suggestion key
+          const strings = localizationManager.getStrings();
+          let prompt = '';
+          
+          switch (suggestionKey) {
+            case 'extractTasks':
+              prompt = strings.chat.prompts.extractTasks;
+              break;
+            case 'writeReply':
+              prompt = strings.chat.prompts.writeReply;
+              break;
+            case 'summarize':
+              prompt = strings.chat.prompts.summarize;
+              break;
+            case 'sentiment':
+              prompt = strings.chat.prompts.sentiment;
+              break;
+            default:
+              prompt = suggestionKey;
+          }
+          
+          chatInput.value = prompt;
+          this.sendChatMessage();
+        } else if (suggestion && chatInput) {
+          // Fallback for classify-email and other hardcoded suggestions
           chatInput.value = suggestion;
           this.sendChatMessage();
         }
@@ -524,8 +563,9 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
         chatInput.style.height = 'auto';
       }
 
-      // Add user action to chat
-      UIComponents.addChatMessage('👤', '🤖 Classify Email');
+      // Add user action to chat (localized)
+      const strings = localizationManager.getStrings();
+      UIComponents.addChatMessage('👤', `🤖 ${strings.buttons.classifyEmail}`);
       
       // Show typing indicator
       UIComponents.showTypingIndicator();
@@ -545,16 +585,24 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     
     if (!this.currentEmailContext) {
       UIComponents.hideTypingIndicator();
-      UIComponents.addChatMessage('❌', 'No email context available. Please select an email first.');
+      UIComponents.addChatMessage('❌', localizationManager.getString('errors.noEmailContext'));
       return;
     }
+
+    // Add language context to the message to ensure AI responds in the correct language
+    const currentLocale = localizationManager.getCurrentLocale();
+    const languageInstruction = currentLocale === 'de' 
+      ? 'Bitte antworte auf Deutsch.' 
+      : 'Please respond in English.';
+    
+    const messageWithLanguage = `${message}\n\n${languageInstruction}`;
 
     // Create a chat request using the new simplified API
     const chatRequest: ChatRequest = {
       subject: this.currentEmailContext.subject || 'No Subject',
       sender: this.currentEmailContext.sender || 'Unknown Sender',
       body: this.currentEmailContext.body || 'No Content',
-      message: message
+      message: messageWithLanguage
     };
 
     try {
@@ -709,16 +757,33 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
       // Always process emails fresh - no caching
       console.log('🔄 Processing email with fresh classification request');
 
-      // Create classification request
+      // Create classification request with proper null handling
       const request: EmailClassificationRequest = {
         subject: this.currentEmailContext.subject || 'No Subject',
         sender: this.currentEmailContext.sender || 'Unknown Sender',
         body: this.currentEmailContext.body || 'No Content',
-        to: this.currentEmailContext.to,
-        message_id: this.currentEmailContext.internetMessageId // Include Outlook message ID for fast lookups
+        to: this.currentEmailContext.to || undefined,
+        message_id: this.currentEmailContext.internetMessageId || undefined
       };
 
+      // Remove undefined fields to prevent backend issues
+      if (!request.to) {
+        delete (request as any).to;
+      }
+      if (!request.message_id) {
+        delete (request as any).message_id;
+      }
+
       console.log('Classifying NEW email:', request);
+      console.log('Email context details:', {
+        hasSubject: !!this.currentEmailContext.subject,
+        hasSender: !!this.currentEmailContext.sender,
+        hasBody: !!this.currentEmailContext.body,
+        hasTo: !!this.currentEmailContext.to,
+        hasMessageId: !!this.currentEmailContext.internetMessageId,
+        subjectLength: this.currentEmailContext.subject?.length || 0,
+        bodyLength: this.currentEmailContext.body?.length || 0
+      });
 
       // Get classification from API
       const classification = await apiClient.classifyEmail(request);
@@ -745,7 +810,33 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     } catch (error) {
       console.error('Error classifying email:', error);
       UIComponents.hideTypingIndicator();
-      UIComponents.showError('Failed to classify email. Please check the agent service connection.');
+      
+      // Provide more specific error message based on error type
+      let errorMessage = 'Failed to classify email. Please check the agent service connection.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('500')) {
+          errorMessage = 'The classification service is experiencing issues. This appears to be a backend problem - please try again in a moment.';
+        } else if (error.message.includes('not supported between instances')) {
+          errorMessage = 'There\'s a data processing issue in the backend service. The development team has been notified.';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network connection issue. Please check your internet connection and try again.';
+        }
+        
+        console.error('Detailed error information:', {
+          message: error.message,
+          stack: error.stack,
+          emailContext: this.currentEmailContext ? {
+            hasSubject: !!this.currentEmailContext.subject,
+            hasSender: !!this.currentEmailContext.sender,
+            hasBody: !!this.currentEmailContext.body,
+            hasTo: !!this.currentEmailContext.to,
+            hasMessageId: !!this.currentEmailContext.internetMessageId
+          } : 'No email context'
+        });
+      }
+      
+      UIComponents.showError(errorMessage);
     }
   }
 
@@ -753,6 +844,9 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     // Store the thread ID and classification data for later use
     this.currentThreadId = classification.thread_id;
     this.lastClassificationData = classification;
+    
+    // Get localized strings
+    const strings = localizationManager.getStrings();
     
     // Extract data from interrupt_data (based on your backend logs)
     const interruptData = classification.interrupt_data || {};
@@ -792,7 +886,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
           font-weight: 600;
           margin-bottom: 16px;
         ">
-          🛑 Human Approval Required
+          🛑 ${strings.decision.humanApprovalRequired}
         </div>
         
         <div style="
@@ -803,7 +897,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
           border-left: 3px solid #ffc107;
         ">
           <div style="margin-bottom: 8px;">
-            <strong>AI Recommendation:</strong> ${finalClassification.toUpperCase()}
+            <strong>${strings.decision.aiRecommendation}:</strong> ${finalClassification.toUpperCase()}
             <span style="color: #adb5bd; margin-left: 8px;">(${Math.round(finalConfidence * 100)}% confidence)</span>
           </div>
           
@@ -822,7 +916,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
             border-left: 3px solid #28a745;
           ">
             <div style="margin-bottom: 8px;">
-              <strong style="color: #28a745;">Proposed Response:</strong>
+              <strong style="color: #28a745;">${strings.decision.proposedResponse}:</strong>
             </div>
             
             <div style="
@@ -848,7 +942,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
             border-left: 3px solid #ffc107;
           ">
             <div style="margin-bottom: 8px;">
-              <strong style="color: #ffc107;">🤔 Clarifying Questions:</strong>
+              <strong style="color: #ffc107;">🤔 ${strings.decision.clarifyingQuestions}:</strong>
             </div>
             
             <div style="color: #e9ecef; line-height: 1.5;">
@@ -860,7 +954,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
         ` : ''}
         
         <div style="color: #e9ecef; font-size: 13px; margin-bottom: 12px;">
-          Choose your action:
+          ${strings.decision.chooseAction}
         </div>
         
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -889,24 +983,26 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
       </div>
     `;
     
-    UIComponents.addChatMessage('', decisionCard);
+    UIComponents.addChatMessageWithHTML('', decisionCard);
   }
 
   private getHumanDecisionButtonConfig(option: string) {
+    const strings = localizationManager.getStrings();
+    
     const configs: { [key: string]: any } = {
       // IGNORE classification decisions
-      'approve_ignore': { label: '✅ Approve Ignore', background: '#28a745', color: 'white', border: 'none' },
-      'process_instead': { label: '🔄 Process Instead', background: 'transparent', color: '#17a2b8', border: '1px solid #17a2b8' },
+      'approve_ignore': { label: `✅ ${strings.decision.approveIgnore}`, background: '#28a745', color: 'white', border: 'none' },
+      'process_instead': { label: `🔄 ${strings.decision.processInstead}`, background: 'transparent', color: '#17a2b8', border: '1px solid #17a2b8' },
       
       // AUTO-REPLY classification decisions (including after provide_answers routing)
-      'approve_send': { label: '✅ Approve & Send', background: '#28a745', color: 'white', border: 'none' },
-      'edit_and_send': { label: '✏️ Edit & Save', background: 'transparent', color: '#ffc107', border: '1px solid #ffc107' },
-      'approve_auto_reply': { label: '✅ Approve Auto-Reply', background: '#28a745', color: 'white', border: 'none' },
+      'approve_send': { label: `✅ ${strings.decision.approveReply}`, background: '#28a745', color: 'white', border: 'none' },
+      'edit_and_send': { label: `✏️ ${strings.decision.editResponse}`, background: 'transparent', color: '#ffc107', border: '1px solid #ffc107' },
+      'approve_auto_reply': { label: `✅ ${strings.decision.approveReply}`, background: '#28a745', color: 'white', border: 'none' },
       
       // INFORMATION-NEEDED classification decisions (with clarifying questions)
-      'provide_answers': { label: '💬 Provide Answers', background: '#28a745', color: 'white', border: 'none' },
-      'convert_to_auto_reply': { label: '🤖 Convert to Auto-Reply', background: 'transparent', color: '#17a2b8', border: '1px solid #17a2b8' },
-      'convert_to_ignore': { label: '🗑️ Convert to Ignore', background: 'transparent', color: '#6c757d', border: '1px solid #6c757d' }
+      'provide_answers': { label: `💬 ${strings.decision.provideAnswers}`, background: '#28a745', color: 'white', border: 'none' },
+      'convert_to_auto_reply': { label: `🤖 ${strings.decision.processInstead}`, background: 'transparent', color: '#17a2b8', border: '1px solid #17a2b8' },
+      'convert_to_ignore': { label: `🗑️ ${strings.decision.denyAction}`, background: 'transparent', color: '#6c757d', border: '1px solid #6c757d' }
     };
     
     return configs[option] || { 
@@ -1161,7 +1257,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     `;
     
     // Add the editor to the chat
-    UIComponents.addChatMessage('', editorCard);
+    UIComponents.addChatMessageWithHTML('', editorCard);
     
     // Focus and select the text
     setTimeout(() => {
@@ -1237,6 +1333,9 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     // Get the clarifying questions from the current display
     const clarifyingQuestions = this.extractClarifyingQuestionsFromCurrentView();
     
+    // Get localized strings
+    const strings = localizationManager.getStrings();
+    
     if (!clarifyingQuestions || clarifyingQuestions.length === 0) {
       UIComponents.addChatMessage('❌', 'No clarifying questions found to answer.');
       return;
@@ -1252,11 +1351,11 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
         margin: 8px 0;
       ">
         <div style="color: #6db4d4; font-weight: 600; margin-bottom: 16px; font-size: 16px;">
-          💬 Answer Clarifying Questions
+          💬 ${strings.decision.answerQuestions}
         </div>
         
         <div style="margin-bottom: 16px; color: #e9ecef;">
-          Please provide answers to help generate a proper response:
+          ${strings.decision.provideAnswersInstructions}
         </div>
         
         <div style="margin-bottom: 16px;">
@@ -1318,7 +1417,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     `;
     
     // Add the answer interface to the chat
-    UIComponents.addChatMessage('', answerCard);
+    UIComponents.addChatMessageWithHTML('', answerCard);
     
     // Focus the textarea
     setTimeout(() => {
@@ -1480,7 +1579,8 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
     // Create a compact, styled classification display similar to the screenshot
     const classificationCard = this.createClassificationCard(classification, confidencePercent);
     
-    UIComponents.addChatMessage(icon, classificationCard);
+    // Use the new HTML-safe method for classification cards
+    UIComponents.addChatMessageWithHTML(icon, classificationCard);
 
     // For auto-reply emails, show suggested response in a compact format
     if (classification.classification === 'auto-reply' && classification.auto_response) {
@@ -1616,7 +1716,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
       </div>
     `;
     
-    UIComponents.addChatMessage('', autoReplyCard);
+    UIComponents.addChatMessageWithHTML('', autoReplyCard);
   }
 
   private addAutoReplyActions(autoResponse: string): void {
@@ -1751,7 +1851,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
       </div>
     `;
     
-    UIComponents.addChatMessage('', guidanceCard);
+    UIComponents.addChatMessageWithHTML('', guidanceCard);
   }
 
   private addGuidanceNotesSection(): void {
@@ -1826,7 +1926,7 @@ IMPORTANT: This is a request to compose/draft an email. Please provide a COMPLET
       </div>
     `;
     
-    UIComponents.addChatMessage('', notesSection);
+    UIComponents.addChatMessageWithHTML('', notesSection);
   }
 
   private async getEmailGuidanceText(): Promise<string | null> {
@@ -2407,7 +2507,7 @@ Description: ${meeting.description}
 let globalAssistant: EmailAssistant | null = null;
 
 // Initialize when Office is ready
-Office.onReady((info) => {
+Office.onReady(async (info) => {
   console.log('Office is ready. Host:', info.host);
   
   // Prevent multiple initializations
@@ -2417,18 +2517,142 @@ Office.onReady((info) => {
   }
   
   if (info.host === Office.HostType.Outlook) {
-    globalAssistant = new EmailAssistant();
-    globalAssistant.initialize().catch(error => {
-      console.error('Failed to initialize Email Assistant:', error);
+    try {
+      // Initialize localization IMMEDIATELY and synchronously
+      console.log('Initializing localization synchronously...');
+      localizationManager.initializeSync();
+      console.log('Localization initialized with locale:', localizationManager.getCurrentLocale());
+      
+      // Update the initial UI with localized strings immediately
+      updateInitialUIWithLocalizedStrings();
+      
+      // Now create the assistant
+      globalAssistant = new EmailAssistant();
+      
+      // Initialize the assistant (localization already done)
+      await globalAssistant.initialize();
+      
+      // Make the assistant globally accessible for onclick handlers
+      (window as any).emailAssistant = globalAssistant;
+    } catch (error) {
+      console.error('Failed to initialize Email Assistant or localization:', error);
       globalAssistant = null; // Reset on error to allow retry
-    });
-    
-    // Make the assistant globally accessible for onclick handlers
-    (window as any).emailAssistant = globalAssistant;
+    }
   } else {
     console.error('This add-in only works in Outlook');
   }
 });
+
+// Function to update initial UI elements with localized strings
+function updateInitialUIWithLocalizedStrings(): void {
+  console.log('Updating initial UI with localized strings...');
+  
+  try {
+    const strings = localizationManager.getStrings();
+    
+    // Update main title
+    const appTitle = document.getElementById('app-title');
+    if (appTitle) {
+      appTitle.textContent = `🤖 ${strings.appTitle}`;
+    }
+
+    // Update email context section
+    const emailContextTitle = document.getElementById('email-context-title');
+    if (emailContextTitle) {
+      emailContextTitle.textContent = `📧 ${strings.emailContext.title}`;
+    }
+
+    const emailSubjectLabel = document.getElementById('email-subject-label');
+    if (emailSubjectLabel) {
+      emailSubjectLabel.textContent = strings.emailContext.subject;
+    }
+
+    const emailFromLabel = document.getElementById('email-from-label');
+    if (emailFromLabel) {
+      emailFromLabel.textContent = strings.emailContext.from;
+    }
+
+    const emailToLabel = document.getElementById('email-to-label');
+    if (emailToLabel) {
+      emailToLabel.textContent = strings.emailContext.to;
+    }
+
+    // Refresh and test connection buttons removed
+
+    // Update chat section
+    const chatTitle = document.getElementById('chat-title');
+    if (chatTitle) {
+      chatTitle.textContent = `💬 ${strings.chat.title}`;
+    }
+
+    const welcomeMessage = document.getElementById('welcome-message');
+    if (welcomeMessage) {
+      welcomeMessage.innerHTML = strings.chat.welcomeMessage.replace(/\n/g, '<br/>');
+    }
+
+    const chatInput = document.getElementById('chat-input') as HTMLTextAreaElement;
+    if (chatInput) {
+      chatInput.placeholder = strings.chat.placeholder;
+    }
+
+    // Update suggestion buttons
+    const suggestionExtractText = document.getElementById('suggestion-extract-text');
+    if (suggestionExtractText) {
+      suggestionExtractText.textContent = strings.chat.suggestions.extractTasks;
+    }
+
+    const suggestionReplyText = document.getElementById('suggestion-reply-text');
+    if (suggestionReplyText) {
+      suggestionReplyText.textContent = strings.chat.suggestions.writeReply;
+    }
+
+    const suggestionSummarizeText = document.getElementById('suggestion-summarize-text');
+    if (suggestionSummarizeText) {
+      suggestionSummarizeText.textContent = strings.chat.suggestions.summarize;
+    }
+
+    const suggestionSentimentText = document.getElementById('suggestion-sentiment-text');
+    if (suggestionSentimentText) {
+      suggestionSentimentText.textContent = strings.chat.suggestions.sentiment;
+    }
+
+    const suggestionClassifyText = document.getElementById('suggestion-classify-text');
+    if (suggestionClassifyText) {
+      suggestionClassifyText.textContent = strings.buttons.classifyEmail;
+    }
+
+    // Update approval buttons
+    const chatBtnAcceptText = document.getElementById('chat-btn-accept-text');
+    if (chatBtnAcceptText) {
+      chatBtnAcceptText.textContent = strings.buttons.accept;
+    }
+
+    const chatBtnEditText = document.getElementById('chat-btn-edit-text');
+    if (chatBtnEditText) {
+      chatBtnEditText.textContent = strings.buttons.edit;
+    }
+
+    const chatBtnRespondText = document.getElementById('chat-btn-respond-text');
+    if (chatBtnRespondText) {
+      chatBtnRespondText.textContent = strings.buttons.respond;
+    }
+
+    const chatBtnRejectText = document.getElementById('chat-btn-reject-text');
+    if (chatBtnRejectText) {
+      chatBtnRejectText.textContent = strings.buttons.reject;
+    }
+
+    // Update status text to show connecting initially
+    const statusText = document.getElementById('status-text');
+    if (statusText) {
+      statusText.textContent = strings.status.connecting;
+    }
+
+    console.log('Initial UI updated with localized strings');
+  } catch (error) {
+    console.error('Error updating initial UI with localized strings:', error);
+  }
+}
 
 // Global error handler
 window.addEventListener('error', (event) => {

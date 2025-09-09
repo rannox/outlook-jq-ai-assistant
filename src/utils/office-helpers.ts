@@ -50,7 +50,7 @@ export async function getCurrentEmailContext(): Promise<EmailContext | null> {
 function convertTextToHtml(text: string): string {
   if (!text) return '';
   
-  // Escape HTML characters
+  // Escape HTML characters first
   const escaped = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -58,14 +58,44 @@ function convertTextToHtml(text: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
   
-  // Convert line breaks to HTML
-  const htmlContent = escaped
-    .replace(/\r\n/g, '<br>')  // Windows line endings
-    .replace(/\n/g, '<br>')   // Unix line endings
-    .replace(/\r/g, '<br>');  // Mac line endings
+  // Convert line breaks to proper paragraphs for better Outlook compatibility
+  let htmlContent = escaped
+    .replace(/\r\n/g, '\n')   // Normalize line endings
+    .replace(/\r/g, '\n')     // Normalize line endings
+    .trim();
   
-  // Wrap in a div with proper styling
-  return `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.4;">${htmlContent}</div>`;
+  // Split into paragraphs (double line breaks)
+  const paragraphs = htmlContent.split('\n\n');
+  
+  // Process each paragraph
+  const processedParagraphs = paragraphs.map(paragraph => {
+    if (!paragraph.trim()) return '';
+    
+    // Convert single line breaks within paragraphs to <br>
+    const withBreaks = paragraph.replace(/\n/g, '<br>');
+    
+    // Apply basic formatting
+    let formatted = withBreaks
+      // Format bold text with ** (do this first)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Format italic text with single * (more compatible approach)
+    // This regex finds single asterisks that aren't part of ** pairs
+    formatted = formatted.replace(/\*([^*\n]+)\*/g, (match, content) => {
+      // Check if this asterisk is part of a ** pair by looking for <strong> tags
+      if (match.includes('<strong>') || match.includes('</strong>')) {
+        return match; // Don't modify if it's part of bold formatting
+      }
+      return `<em>${content}</em>`;
+    });
+    
+    return `<p style="margin: 0 0 12px 0; line-height: 1.4;">${formatted}</p>`;
+  }).filter(p => p);
+  
+  // Wrap in a div with Outlook-optimized styling
+  return `<div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.4; color: #000000;">
+    ${processedParagraphs.join('')}
+  </div>`;
 }
 
 function getFromAddress(): Promise<string> {

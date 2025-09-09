@@ -1,4 +1,47 @@
 import { AgentStatus, InterruptResponse } from '../models/types';
+import { localizationManager } from '../localization/localization-manager';
+
+// HTML formatting utilities for chat messages
+function escapeHtml(text: string): string {
+  if (!text) return '';
+  
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatChatText(text: string): string {
+  if (!text) return '';
+  
+  // First escape HTML to prevent XSS
+  const escaped = escapeHtml(text);
+  
+  // Convert line breaks to HTML
+  let formatted = escaped
+    .replace(/\r\n/g, '<br>')  // Windows line endings
+    .replace(/\n/g, '<br>')   // Unix line endings  
+    .replace(/\r/g, '<br>');  // Mac line endings
+  
+  // Apply basic markdown-style formatting
+  // Format bold text with ** (do this first)
+  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  
+  // Format italic text with single * (compatible approach)
+  formatted = formatted.replace(/\*([^*\n]+)\*/g, (match, content) => {
+    if (match.includes('<strong>') || match.includes('</strong>')) {
+      return match; // Don't modify if it's part of bold formatting
+    }
+    return `<em>${content}</em>`;
+  });
+  
+  // Format code with backticks
+  formatted = formatted.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 3px; font-family: monospace;">$1</code>');
+  
+  return formatted;
+}
 
 export class UIComponents {
   
@@ -21,16 +64,21 @@ export class UIComponents {
 
   static getStatusMessage(status: string): string {
     switch (status) {
-      case 'thinking': return 'AI is thinking...';
-      case 'waiting_for_human': return 'Waiting for your input';
-      case 'completed': return 'Task completed';
-      case 'cancelled': return 'Action cancelled';
-      case 'error': return 'An error occurred';
-      default: return 'Ready';
+      case 'thinking': return localizationManager.getString('status.thinking');
+      case 'waiting_for_human': return localizationManager.getString('status.waitingForInput');
+      case 'completed': return localizationManager.getString('status.completed');
+      case 'cancelled': return localizationManager.getString('status.cancelled');
+      case 'error': return localizationManager.getString('status.error');
+      case 'connecting': return localizationManager.getString('status.connecting');
+      case 'disconnected': return localizationManager.getString('status.disconnected');
+      default: return localizationManager.getString('status.ready');
     }
   }
 
-  static showLoading(show: boolean, message: string = 'Processing...'): void {
+  static showLoading(show: boolean, message: string = ''): void {
+    if (!message) {
+      message = localizationManager.getString('processing.loading');
+    }
     // Loading overlay removed - using status area instead
     if (show) {
       this.addStatusItem('⚡', message, true);
@@ -86,9 +134,13 @@ export class UIComponents {
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ai-message${isThinking ? ' thinking' : ''}`;
     
+    // Use safe HTML formatting for the text content
+    const formattedText = formatChatText(text);
+    const safeIcon = escapeHtml(icon);
+    
     messageDiv.innerHTML = `
-      <span class="message-icon">${icon}</span>
-      <span class="message-text">${text}</span>
+      <span class="message-icon">${safeIcon}</span>
+      <span class="message-text">${formattedText}</span>
     `;
     
     chatMessages.appendChild(messageDiv);
@@ -104,9 +156,34 @@ export class UIComponents {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'chat-message user-message';
     
+    // Use safe HTML formatting for user messages too
+    const formattedText = formatChatText(text);
+    
     messageDiv.innerHTML = `
       <span class="message-icon">👤</span>
-      <span class="message-text">${text}</span>
+      <span class="message-text">${formattedText}</span>
+    `;
+    
+    chatMessages.appendChild(messageDiv);
+    
+    // Auto-scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  // For trusted HTML content like classification cards
+  static addChatMessageWithHTML(icon: string, htmlContent: string, isThinking: boolean = false): void {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ai-message${isThinking ? ' thinking' : ''}`;
+    
+    // Escape only the icon, but trust the HTML content (for classification cards, etc.)
+    const safeIcon = escapeHtml(icon);
+    
+    messageDiv.innerHTML = `
+      <span class="message-icon">${safeIcon}</span>
+      <span class="message-text">${htmlContent}</span>
     `;
     
     chatMessages.appendChild(messageDiv);
@@ -745,9 +822,10 @@ export class UIComponents {
       to: document.getElementById('email-to')
     };
 
-    if (elements.subject) elements.subject.textContent = subject || 'No subject';
-    if (elements.from) elements.from.textContent = from || 'Unknown sender';
-    if (elements.to) elements.to.textContent = to || 'Unknown recipient';
+    const strings = localizationManager.getStrings();
+    if (elements.subject) elements.subject.textContent = subject || strings.emailContext.noSubject;
+    if (elements.from) elements.from.textContent = from || strings.emailContext.unknownSender;
+    if (elements.to) elements.to.textContent = to || strings.emailContext.unknownRecipient;
 
     const contextSection = document.getElementById('email-context');
     if (contextSection) {
@@ -784,7 +862,9 @@ export class UIComponents {
     const statusIcon = document.getElementById('connection-status');
     if (statusIcon) {
       statusIcon.textContent = connected ? '🟢' : '🔴';
-      statusIcon.title = connected ? 'Connected to agent service' : 'Disconnected from agent service';
+      statusIcon.title = connected 
+        ? localizationManager.getString('connectionStatus.connected')
+        : localizationManager.getString('connectionStatus.disconnected');
     }
   }
 
@@ -808,41 +888,41 @@ export class UIComponents {
   }
 
   static showSystemStatus(status: any): void {
+    // System status is now only logged to console, not displayed in chat
+    // This prevents cluttering the chat interface with technical status messages
     if (!status) {
-      this.addChatMessage('🤖', '🏥 **System Status**: Service is responding but status details unavailable');
+      console.log('System Status: Service is responding but status details unavailable');
       return;
     }
     
     const statusValue = status.status || 'unknown';
     
-    // Handle different response formats
+    // Handle different response formats - log to console only
     if (status.checks) {
-      // Expected format with checks object
       const checks = status.checks;
       const message = status.message || 'No additional information';
       
-      const statusMessage = `🏥 **System Status: ${statusValue}**
-• Exchange: ${checks.exchange ? '✅ Connected' : '❌ Disconnected'}
-• Database: ${checks.database ? '✅ Connected' : '❌ Disconnected'}  
-• LLM: ${checks.llm ? '✅ Available' : '❌ Unavailable'}
-• Message: ${message}`;
-      
-      this.addChatMessage('🤖', statusMessage.replace(/\n/g, '<br>'));
+      console.log('System Status Details:', {
+        status: statusValue,
+        exchange: checks.exchange ? 'Connected' : 'Disconnected',
+        database: checks.database ? 'Connected' : 'Disconnected',
+        llm: checks.llm ? 'Available' : 'Unavailable',
+        message: message
+      });
     } else if (status.tools) {
-      // Actual format from your backend
       const toolCount = Array.isArray(status.tools) ? status.tools.length : 0;
-      const statusMessage = `🏥 **System Status: ${statusValue}**
-• LangChain Tools: ${toolCount} available
-• Service: ✅ Running
-• Backend: ✅ Responding`;
       
-      this.addChatMessage('🤖', statusMessage.replace(/\n/g, '<br>'));
+      console.log('System Status Details:', {
+        status: statusValue,
+        langchainTools: toolCount,
+        service: 'Running',
+        backend: 'Responding'
+      });
     } else {
-      // Minimal format
-      const statusMessage = `🏥 **System Status: ${statusValue}**
-• Service: ✅ Running and responding`;
-      
-      this.addChatMessage('🤖', statusMessage.replace(/\n/g, '<br>'));
+      console.log('System Status:', {
+        status: statusValue,
+        service: 'Running and responding'
+      });
     }
   }
 
