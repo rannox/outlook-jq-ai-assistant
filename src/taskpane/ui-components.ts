@@ -1,4 +1,12 @@
-import { AgentStatus, InterruptResponse } from '../models/types';
+import { 
+  AgentStatus, 
+  InterruptResponse, 
+  InterruptData,
+  EmailClassification,
+  ChatApprovalOptions,
+  EmailDraft,
+  MeetingRequest
+} from '../models/types';
 import { localizationManager } from '../localization/localization-manager';
 
 // HTML formatting utilities for chat messages
@@ -16,8 +24,11 @@ function escapeHtml(text: string): string {
 function formatChatText(text: string): string {
   if (!text) return '';
   
+  // Clean up text first - remove leading/trailing whitespace and newlines
+  const cleaned = text.trim().replace(/^[\r\n]+|[\r\n]+$/g, '');
+  
   // First escape HTML to prevent XSS
-  const escaped = escapeHtml(text);
+  const escaped = escapeHtml(cleaned);
   
   // Convert line breaks to HTML
   let formatted = escaped
@@ -264,7 +275,7 @@ export class UIComponents {
     }
   }
 
-  static showReplyApproval(replyContent: string): Promise<any> {
+  static showReplyApproval(replyContent: string): Promise<InterruptResponse> {
     return new Promise((resolve) => {
       const chatMessages = document.getElementById('chat-messages');
       if (!chatMessages) {
@@ -334,7 +345,7 @@ export class UIComponents {
     });
   }
 
-  static showChatApproval(options: any): Promise<any> {
+  static showChatApproval(options: ChatApprovalOptions): Promise<InterruptResponse> {
     return new Promise((resolve) => {
       const chatMessages = document.getElementById('chat-messages');
       if (!chatMessages) {
@@ -435,7 +446,7 @@ export class UIComponents {
     });
   }
 
-  static showInterruptDialog(interruptData: any): Promise<InterruptResponse> {
+  static showInterruptDialog(interruptData: InterruptData): Promise<InterruptResponse> {
     console.log('showInterruptDialog called with:', interruptData);
     
     return new Promise((resolve) => {
@@ -444,9 +455,11 @@ export class UIComponents {
       
       // Show draft details if available
       if (interruptData.action === 'draft_email' && interruptData.args) {
-        const args = interruptData.args;
-        const draftText = `📧 **Draft Email:**\n**To:** ${args.to}\n**Subject:** ${args.subject}\n**Body:** ${args.body}`;
-        this.addChatMessage('📝', draftText.replace(/\n/g, '<br>'));
+        const args = interruptData.args as EmailDraft;
+        if (args && typeof args === 'object' && 'to' in args && 'subject' in args && 'body' in args) {
+          const draftText = `📧 **Draft Email:**\n**To:** ${args.to}\n**Subject:** ${args.subject}\n**Body:** ${args.body}`;
+          this.addChatMessage('📝', draftText.replace(/\n/g, '<br>'));
+        }
       }
       
       // Use chat approval area
@@ -485,7 +498,7 @@ export class UIComponents {
         
         const onEdit = () => {
           // Show email editor instead of simple feedback
-          this.showEmailEditor(interruptData.args, (editedArgs, feedback) => {
+          this.showEmailEditor(interruptData.args as EmailDraft, (editedArgs, feedback) => {
             cleanup();
             resolve({ 
               type: 'edit', 
@@ -544,7 +557,7 @@ export class UIComponents {
     }
   }
 
-  static showEmailEditor(originalArgs: any, onSubmit: (editedArgs: any, feedback: string) => void, onCancel: () => void): void {
+  static showEmailEditor(originalArgs: EmailDraft, onSubmit: (editedArgs: EmailDraft, feedback: string) => void, onCancel: () => void): void {
     // Add email editor form to chat area
     const chatMessages = document.getElementById('chat-messages');
     if (!chatMessages) return;
@@ -600,10 +613,11 @@ export class UIComponents {
     };
 
     const onSaveClick = () => {
-      const editedArgs = {
+      const editedArgs: EmailDraft = {
         to: toField?.value?.trim() || originalArgs.to,
         subject: subjectField?.value?.trim() || originalArgs.subject,
-        body: bodyField?.value?.trim() || originalArgs.body
+        body: bodyField?.value?.trim() || originalArgs.body,
+        type: originalArgs.type || 'email'
       };
       const feedback = notesField?.value?.trim() || '';
       
@@ -888,7 +902,7 @@ export class UIComponents {
     }
   }
 
-  static showSystemStatus(status: any): void {
+  static showSystemStatus(status: Record<string, unknown> | null): void {
     // System status is now only logged to console, not displayed in chat
     // This prevents cluttering the chat interface with technical status messages
     if (!status) {
@@ -900,7 +914,7 @@ export class UIComponents {
     
     // Handle different response formats - log to console only
     if (status.checks) {
-      const checks = status.checks;
+      const checks = status.checks as Record<string, unknown>;
       const message = status.message || 'No additional information';
       
       console.log('System Status Details:', {
@@ -927,7 +941,7 @@ export class UIComponents {
     }
   }
 
-  static showClassificationResults(classification: any): void {
+  static showClassificationResults(classification: EmailClassification): void {
     // Classification section removed - results now shown in chat
     return;
   }
@@ -1101,7 +1115,7 @@ export class UIComponents {
     }
   }
 
-  static async draftReplyWithGuidance(classification: any): Promise<void> {
+  static async draftReplyWithGuidance(classification: EmailClassification): Promise<void> {
     const notesInput = document.getElementById('user-notes-input') as HTMLTextAreaElement;
     const userNotes = notesInput ? notesInput.value.trim() : '';
     

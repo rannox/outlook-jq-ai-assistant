@@ -1,10 +1,15 @@
-import { StreamMessage, AgentStatus } from '../models/types';
+import { 
+  StreamMessage, 
+  AgentStatus, 
+  StreamMessageData,
+  ErrorDetails
+} from '../models/types';
 
 export class WebSocketClient {
   private ws: WebSocket | null = null;
   private baseUrl: string;
   private onStatusUpdate?: (status: AgentStatus) => void;
-  private onStreamData?: (data: any) => void;
+  private onStreamData?: (data: StreamMessageData) => void;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectInterval = 1000;
@@ -41,15 +46,23 @@ export class WebSocketClient {
         
         this.ws.onerror = (error) => {
           console.error('WebSocket error:', error);
-          reject(error);
+          reject(new Error('WebSocket connection failed - this may be due to authentication or server configuration'));
         };
         
         this.ws.onclose = (event) => {
           console.log('WebSocket disconnected:', event.code, event.reason);
           this.ws = null;
           
-          // Attempt to reconnect if not intentionally closed
-          if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+          // Don't attempt to reconnect for certain error codes (like 403 Forbidden)
+          if (event.code === 1000) {
+            // Normal closure, don't reconnect
+            return;
+          } else if (event.code === 1006 && event.reason === '') {
+            // This is likely a 403 error during handshake, don't reconnect
+            console.warn('WebSocket connection failed during handshake (likely 403 Forbidden). Working without real-time updates.');
+            return;
+          } else if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            // Other errors, attempt to reconnect
             this.attemptReconnect(threadId);
           }
         };
@@ -87,7 +100,7 @@ export class WebSocketClient {
       case 'status':
         if (this.onStatusUpdate) {
           this.onStatusUpdate({
-            status: message.data.status,
+            status: (message.data.status as AgentStatus['status']) || 'thinking',
             message: message.data.message,
             thread_id: message.thread_id
           });
@@ -107,7 +120,7 @@ export class WebSocketClient {
           this.onStatusUpdate({
             status: 'waiting_for_human',
             message: 'Agent needs your input',
-            data: message.data,
+            data: message.data as any, // Type assertion for compatibility
             thread_id: message.thread_id
           });
         }
@@ -119,7 +132,7 @@ export class WebSocketClient {
           this.onStatusUpdate({
             status: 'completed',
             message: 'Task completed successfully',
-            data: message.data,
+            data: message.data as any, // Type assertion for compatibility
             thread_id: message.thread_id
           });
         }
@@ -143,7 +156,7 @@ export class WebSocketClient {
     this.onStatusUpdate = callback;
   }
 
-  onStream(callback: (data: any) => void): void {
+  onStream(callback: (data: StreamMessageData) => void): void {
     this.onStreamData = callback;
   }
 

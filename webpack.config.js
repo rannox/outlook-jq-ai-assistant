@@ -9,7 +9,7 @@ module.exports = (env, argv) => {
   
   return {
     entry: {
-      taskpane: './src/taskpane/taskpane.ts'
+      taskpane: './src/taskpane/main.ts'
     },
     output: {
       filename: '[name].js',

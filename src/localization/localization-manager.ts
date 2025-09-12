@@ -161,11 +161,11 @@ export class LocalizationManager {
   public getString(path: string): string {
     try {
       const keys = path.split('.');
-      let value: any = this.currentStrings;
+      let value: unknown = this.currentStrings;
       
       for (const key of keys) {
-        if (value && typeof value === 'object' && key in value) {
-          value = value[key];
+        if (value && typeof value === 'object' && !Array.isArray(value) && key in value) {
+          value = (value as Record<string, unknown>)[key];
         } else {
           console.warn(`Localization key not found: ${path}`);
           return path; // Return the path as fallback

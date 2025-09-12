@@ -14,7 +14,20 @@
     "declarationMap": true,
     "sourceMap": true,
     "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    
+    // Reasonable TypeScript checks for better code quality
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    
+    // Core strict checks (already included in "strict": true)
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
