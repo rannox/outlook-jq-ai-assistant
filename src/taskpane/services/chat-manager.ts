@@ -16,6 +16,7 @@ import { EventEmitter } from '../../utils/event-emitter';
 import { localizationManager } from '../../localization/localization-manager';
 import { EmailAgentError } from '../error-handler';
 import { createReply } from '../../utils/office-helpers';
+import { UIComponents } from '../ui-components';
 
 export interface ChatMessage {
   id: string;
@@ -132,10 +133,14 @@ export class ChatManager extends EventEmitter {
         
         // Show classification result
         if (response.classification) {
+          // Debug logging for clarifying questions
+          console.log('[ChatManager] Classification data:', response.classification);
+          console.log('[ChatManager] Interrupt data:', response.interrupt_data);
+          
           this.addMessage({
             id: this.generateMessageId(),
             type: 'assistant',
-            content: this.formatClassificationResult(response.classification),
+            content: this.formatClassificationResult(response.classification, response.interrupt_data),
             timestamp: new Date()
           });
         }
@@ -338,21 +343,34 @@ export class ChatManager extends EventEmitter {
           }
           
           // Handle special decisions that need text input
-          let finalDecision = decision;
-          if (decision === 'provide_answers' || decision === 'custom_reply') {
+          if (decision === 'provide_answers') {
             const text = await this.promptForText(decision);
             if (text) {
-              finalDecision = `${decision}:${text}`;
+              // Remove the decision buttons
+              this.removeDecisionButtons(workflowId);
+              // Submit with new JSON format
+              await this.submitDecisionWithAnswers(workflowId, text);
             } else {
               return; // User cancelled
             }
+          } else if (decision === 'custom_reply') {
+            const text = await this.promptForText(decision);
+            if (text) {
+              const finalDecision = `${decision}:${text}`;
+              // Remove the decision buttons
+              this.removeDecisionButtons(workflowId);
+              // Submit the decision
+              await this.submitDecision(workflowId, finalDecision);
+            } else {
+              return; // User cancelled
+            }
+          } else {
+            // Remove the decision buttons
+            this.removeDecisionButtons(workflowId);
+            
+            // Submit the decision
+            await this.submitDecision(workflowId, decision);
           }
-
-          // Remove the decision buttons
-          this.removeDecisionButtons(workflowId);
-          
-          // Submit the decision
-          await this.submitDecision(workflowId, finalDecision);
         }
       });
     });
@@ -730,16 +748,34 @@ ${originalText}
   }
 
   /**
-   * Prompt user for text input for decisions that require it
+   * Prompt user for text input for decisions that require it using UIComponents
    */
   private async promptForText(decision: string): Promise<string | null> {
     const prompts = {
-      'provide_answers': 'Provide answers to help generate a response:',
-      'custom_reply': 'Enter your custom reply:'
+      'provide_answers': 'Antworten geben',
+      'custom_reply': 'Benutzerdefinierte Antwort eingeben'
     };
     
-    const promptText = prompts[decision as keyof typeof prompts] || 'Enter text:';
-    return prompt(promptText);
+    const placeholders = {
+      'provide_answers': 'Geben Sie Ihre Antworten auf die klärenden Fragen ein...',
+      'custom_reply': 'Geben Sie Ihre benutzerdefinierte Antwort ein...'
+    };
+    
+    const title = prompts[decision as keyof typeof prompts] || 'Text eingeben';
+    const placeholder = placeholders[decision as keyof typeof placeholders] || 'Text eingeben...';
+    
+    return new Promise((resolve) => {
+      UIComponents.showInlineInput(
+        title,
+        placeholder,
+        (value: string) => {
+          resolve(value || null);
+        },
+        () => {
+          resolve(null);
+        }
+      );
+    });
   }
 
   /**
@@ -832,7 +868,7 @@ ${originalText}
       this.addMessage({
         id: this.generateMessageId(),
         type: 'assistant',
-        content: this.formatClassificationResult(workflowResponse.classification),
+        content: this.formatClassificationResult(workflowResponse.classification, workflowResponse.interrupt_data),
         timestamp: new Date()
       });
     }
@@ -847,6 +883,63 @@ ${originalText}
     // Add decision buttons for the continued workflow
     const buttonsHtml = this.createDecisionButtonsHtml(workflowResponse);
     this.addDecisionButtonsMessage(workflowResponse.workflow_id, buttonsHtml);
+  }
+
+  /**
+   * Submit decision with answers in the new JSON format
+   */
+  private async submitDecisionWithAnswers(workflowId: string, answers: string): Promise<void> {
+    try {
+      this.addMessage({
+        id: this.generateMessageId(),
+        type: 'system',
+        content: `⏳ ${localizationManager.getString('processing.processingDecision')} provide_answers`,
+        timestamp: new Date()
+      });
+
+      const decision = {
+        decision: "provide_answers",
+        proposed_reply: answers
+      };
+
+      const result = await apiClient.submitHITLDecision(workflowId, decision);
+      
+      if (result.status === 'completed' && result.result) {
+        this.addMessage({
+          id: this.generateMessageId(),
+          type: 'assistant',
+          content: this.formatFinalResult(result.result),
+          timestamp: new Date()
+        });
+      } else if (result.status === 'awaiting_decision' && result.interrupt_data) {
+        // Continue with next decision
+        this.showInlineDecisionButtons(result);
+      } else {
+        this.addMessage({
+          id: this.generateMessageId(),
+          type: 'system',
+          content: `✅ ${localizationManager.getString('chat.responses.answerSubmitted')}`,
+          timestamp: new Date()
+        });
+      }
+
+      this.updateStatus({ 
+        isProcessing: false,
+        workflowStatus: result.status === 'completed' ? 'completed' : 'awaiting_decision'
+      });
+
+    } catch (error) {
+      console.error('Error submitting answers:', error);
+      
+      this.addMessage({
+        id: this.generateMessageId(),
+        type: 'system',
+        content: `❌ Answer submission failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date()
+      });
+      
+      this.updateStatus({ isProcessing: false });
+    }
   }
 
   /**
@@ -971,7 +1064,7 @@ ${originalText}
     }
   }
 
-  private formatClassificationResult(classification: HITLWorkflowResponse['classification']): string {
+  private formatClassificationResult(classification: HITLWorkflowResponse['classification'], interruptData?: any): string {
     if (!classification) return '';
     
     const typeEmoji = {
@@ -993,6 +1086,24 @@ ${originalText}
     const proposedReply = classification.auto_response || classification.proposed_reply;
     if (proposedReply) {
       result += `\n**${localizationManager.getString('classification.proposedResponse')}**\n${proposedReply}`;
+    }
+
+    // Add clarifying questions if available - check both classification and interrupt_data
+    const clarifyingQuestions = classification.clarifying_questions || 
+                               classification.questions || 
+                               interruptData?.clarifying_questions;
+    
+    console.log('[ChatManager] Looking for clarifying questions:');
+    console.log('  classification.clarifying_questions:', classification.clarifying_questions);
+    console.log('  classification.questions:', classification.questions);
+    console.log('  interruptData?.clarifying_questions:', interruptData?.clarifying_questions);
+    console.log('  Final clarifyingQuestions:', clarifyingQuestions);
+    
+    if (clarifyingQuestions && clarifyingQuestions.length > 0) {
+      result += `\n\n**${localizationManager.getString('classification.clarifyingQuestions')}**`;
+      clarifyingQuestions.forEach((question: string, index: number) => {
+        result += `\n${index + 1}. ${question}`;
+      });
     }
 
     return result;

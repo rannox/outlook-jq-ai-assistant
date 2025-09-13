@@ -324,7 +324,19 @@ export class HITLDecisionDialog {
       // Step 1: Enter edit mode - show edit dialog
       this.showEditModeDialog(config, resolve);
       return;
-    } else if (decision === 'provide_answers' || decision === 'custom_reply') {
+    } else if (decision === 'provide_answers') {
+      const textarea = document.querySelector('#response-text') as HTMLTextAreaElement;
+      const text = textarea?.value.trim();
+      if (text) {
+        // Use JSON format for provide_answers
+        finalDecision = JSON.stringify({
+          decision: "provide_answers",
+          proposed_reply: text
+        });
+      } else {
+        return; // Don't proceed without text
+      }
+    } else if (decision === 'custom_reply') {
       const textarea = document.querySelector('#response-text') as HTMLTextAreaElement;
       const text = textarea?.value.trim();
       if (text) {
