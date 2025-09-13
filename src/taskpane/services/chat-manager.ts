@@ -795,8 +795,11 @@ ${originalText}
         try {
           // Check workflow status to get the next interrupt
           const statusData = await apiClient.getHITLWorkflowStatus(workflowId);
+          console.log(`[ChatManager] Polling attempt ${attempts}: status="${statusData.status}", has_interrupt_data=${!!statusData.interrupt_data}`);
+          console.log('[ChatManager] Full statusData:', statusData);
           
           if (statusData.status === 'awaiting_decision' && statusData.interrupt_data) {
+            console.log('[ChatManager] Found second interrupt data, showing continued workflow classification');
             // Create a new workflow response object for the continued workflow
             const continuedWorkflowResponse: HITLWorkflowResponse = {
               workflow_id: workflowId,
@@ -813,7 +816,7 @@ ${originalText}
             this.addMessage({
               id: this.generateMessageId(),
               type: 'assistant',
-              content: this.formatFinalResult(statusData.result),
+              content: this.formatFinalResult(statusData.result || (statusData as any).final_result),
               timestamp: new Date()
             });
             this.updateStatus({ workflowStatus: 'completed' });
@@ -858,6 +861,7 @@ ${originalText}
    * Show classification for continued workflow (similar to initial but without storing duplicate data)
    */
   private showContinuedWorkflowClassification(workflowResponse: HITLWorkflowResponse): void {
+    console.log('[ChatManager] showContinuedWorkflowClassification called with:', workflowResponse);
     // Update stored workflow data
     if ((this as any)._workflowData) {
       (this as any)._workflowData[workflowResponse.workflow_id] = workflowResponse;
@@ -904,16 +908,30 @@ ${originalText}
 
       const result = await apiClient.submitHITLDecision(workflowId, decision);
       
-      if (result.status === 'completed' && result.result) {
+      if (result.status === 'completed' && result.final_result) {
         this.addMessage({
           id: this.generateMessageId(),
           type: 'assistant',
-          content: this.formatFinalResult(result.result),
+          content: this.formatFinalResult(result.final_result),
           timestamp: new Date()
         });
-      } else if (result.status === 'awaiting_decision' && result.interrupt_data) {
-        // Continue with next decision
-        this.showInlineDecisionButtons(result);
+      } else if (result.status === 'awaiting_decision') {
+        console.log('[ChatManager] Checking immediate interrupt_data:', result);
+        if (result.interrupt_data) {
+          console.log('[ChatManager] Found immediate interrupt_data, showing directly');
+          // Create a proper workflow response structure for immediate display
+          const immediateWorkflowResponse: HITLWorkflowResponse = {
+            workflow_id: workflowId,
+            status: 'awaiting_decision',
+            classification: this.extractClassificationFromInterruptData(result.interrupt_data),
+            interrupt_data: result.interrupt_data
+          };
+          this.showContinuedWorkflowClassification(immediateWorkflowResponse);
+        } else {
+          console.log('[ChatManager] No immediate interrupt_data, starting polling');
+          // Continue with next decision - poll for the next interrupt data
+          await this.handleContinuedWorkflow(workflowId);
+        }
       } else {
         this.addMessage({
           id: this.generateMessageId(),
@@ -961,11 +979,11 @@ ${originalText}
 
       const result = await apiClient.submitHITLDecision(workflowId, decision);
       
-      if (result.status === 'completed' && result.result) {
+      if (result.status === 'completed' && result.final_result) {
         this.addMessage({
           id: this.generateMessageId(),
           type: 'assistant',
-          content: this.formatFinalResult(result.result),
+          content: this.formatFinalResult(result.final_result),
           timestamp: new Date()
         });
         this.updateStatus({ workflowStatus: 'completed' });
@@ -1017,12 +1035,14 @@ ${originalText}
       });
 
       const result = await apiClient.submitHITLDecision(workflowId, decision);
+      console.log('[ChatManager] submitDecision - Backend response:', result);
       
-      if (result.status === 'completed' && result.result) {
+      if (result.status === 'completed' && result.final_result) {
+        console.log('[ChatManager] Workflow completed, showing final result');
         this.addMessage({
           id: this.generateMessageId(),
           type: 'assistant',
-          content: this.formatFinalResult(result.result),
+          content: this.formatFinalResult(result.final_result),
           timestamp: new Date()
         });
         this.updateStatus({ workflowStatus: 'completed' });

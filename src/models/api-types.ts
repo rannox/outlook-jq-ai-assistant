@@ -303,6 +303,14 @@ export interface HITLWorkflowStatus {
     auto_response?: string;
     questions_answered?: string[];
   };
+  final_result?: {
+    final_action: string;
+    auto_response?: string;
+    questions_answered?: string[];
+    classification?: string;
+    proposed_reply?: string;
+    reasoning?: string;
+  };
   interrupt_data?: HITLWorkflowResponse['interrupt_data'];
   error?: string;
 }
